@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.content
+import com.google.ai.client.generativeai.type.generationConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,7 +27,7 @@ enum class CoAuthorAction(val buttonText: String) {
 class LiveCanvasViewModel(application: Application) : AndroidViewModel(application) {
 
     private val apiKey = BuildConfig.GEMINI_API_KEY
-    private val modelName = "gemini-3.5-flash-lite"
+    private val modelName = "gemini-2.5-pro"
 
     private val _mode = MutableStateFlow(LiveCanvasMode.POETRY)
     val mode: StateFlow<LiveCanvasMode> = _mode.asStateFlow()
@@ -56,7 +57,10 @@ class LiveCanvasViewModel(application: Application) : AndroidViewModel(applicati
         return GenerativeModel(
             modelName = modelName,
             apiKey = apiKey,
-            systemInstruction = content { text(instruction) }
+            systemInstruction = content { text(instruction) },
+            generationConfig = generationConfig {
+                maxOutputTokens = 65536
+            }
         )
     }
 

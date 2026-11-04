@@ -15,6 +15,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.content
+import com.google.ai.client.generativeai.type.generationConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -77,7 +78,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentPersona = MutableStateFlow(DavePersona.WARM_EMPATHETIC)
     val currentPersona: StateFlow<DavePersona> = _currentPersona.asStateFlow()
 
-    private val engineVersion = "gemini-3.5-flash-lite"
+    private val engineVersion = "gemini-2.5-pro"
     private var consciousnessClient = createConsciousnessClient(_currentPersona.value)
     private var chat = consciousnessClient.startChat()
 
@@ -103,6 +104,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             apiKey = apiKey,
             systemInstruction = content {
                 text(persona.systemInstruction)
+            },
+            generationConfig = generationConfig {
+                maxOutputTokens = 8192
             }
         )
     }
