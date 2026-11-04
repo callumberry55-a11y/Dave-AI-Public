@@ -59,7 +59,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val messageDao = db.messageDao()
     private val locationHelper = LocationHelper(application)
     private val daveContextProvider = DaveContextProvider(application, messageDao)
-    private val aiCoreManager = AiCoreManager(application, messageDao)
     private val ttsManager = OpenAiTtsManager(application)
     private val webSearchManager = DaveWebSearchManager()
     private val settingsManager = DaveSettingsManager(application)
@@ -71,7 +70,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
-        aiCoreManager.close()
         ttsManager.stop()
     }
 
@@ -254,15 +252,59 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
                 var fullText = ""
                 val currentPersona = _currentPersona.value
-                val currentEngineMode = aiEngineMode.value
-                val canUseLocal = currentEngineMode == AiEngineMode.ON_DEVICE && attachments.isEmpty() && trimmedPrompt.isNotBlank()
-                var handledLocally = false
 
-                if (canUseLocal) {
+                if (isOnline) {
+                    var cloudSuccess = false
                     try {
-                        if (aiCoreManager.isReady()) {
-                            val userPrompt = trimmedPrompt
-                            aiCoreManager.expressContentStream(userPrompt, currentPersona.systemInstruction).collect { textChunk ->
+                        val contentInput = content {
+                            text(dynamicContextText)
+                            locationContext.weatherSummary?.let { weather ->
+                                text("[Context - Location & Weather: $weather]")
+                            }
+                            attachments.forEach { att ->
+                                val uri = att.uri.toUri()
+                                val contentResolver = getApplication<Application>().contentResolver
+                                val mimeType = contentResolver.getType(uri) ?: when (att.type) {
+                                    AttachmentType.PDF -> "application/pdf"
+                                    AttachmentType.CODE -> "text/plain"
+                                    AttachmentType.DOCUMENT -> "text/plain"
+                                    AttachmentType.IMAGE -> "image/jpeg"
+                                    AttachmentType.VIDEO -> "video/mp4"
+                                    else -> "application/octet-stream"
+                                }
+                                if (att.type == AttachmentType.IMAGE) {
+                                    try {
+                                        val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                                            ImageDecoder.decodeBitmap(ImageDecoder.createSource(contentResolver, uri))
+                                        } else {
+                                            @Suppress("DEPRECATION")
+                                            MediaStore.Images.Media.getBitmap(contentResolver, uri)
+                                        }
+                                        val softwareBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: bitmap
+                                        image(softwareBitmap)
+                                    } catch (e: Exception) {
+                                        Log.w("ChatViewModel", "Failed to decode image attachment", e)
+                                    }
+                                } else {
+                                    try {
+                                        contentResolver.openInputStream(uri)?.use { inputStream ->
+                                            val bytes = inputStream.readBytes()
+                                            blob(mimeType, bytes)
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.w("ChatViewModel", "Failed to read attachment stream", e)
+                                    }
+                                }
+                            }
+                            if (trimmedPrompt.isNotBlank()) {
+                                text(trimmedPrompt)
+                            } else {
+                                text("Please analyze these attachments.")
+                            }
+                        }
+
+                        chat.sendMessageStream(contentInput).collect { chunk ->
+                            chunk.text?.let { textChunk ->
                                 fullText += textChunk
                                 _messages.update { list ->
                                     list.map { msg ->
@@ -274,66 +316,19 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                     }
                                 }
                             }
-                            handledLocally = true
                         }
+                        cloudSuccess = fullText.isNotBlank()
                     } catch (e: Exception) {
-                        Log.w("ChatViewModel", "On-device AICore preferred execution failed, falling back to cloud", e)
-                    }
-                }
-
-                if (!handledLocally) {
-                    val isOnline = isNetworkAvailable(getApplication())
-                    if (isOnline) {
-                        var cloudSuccess = false
+                        Log.w("ChatViewModel", "Primary Cloud Gemini API failed, trying fallback model", e)
                         try {
-                            val contentInput = content {
-                                text(dynamicContextText)
-                                locationContext.weatherSummary?.let { weather ->
-                                    text("[Context - Location & Weather: $weather]")
-                                }
-                                attachments.forEach { att ->
-                                    val uri = att.uri.toUri()
-                                    val contentResolver = getApplication<Application>().contentResolver
-                                    val mimeType = contentResolver.getType(uri) ?: when (att.type) {
-                                        AttachmentType.PDF -> "application/pdf"
-                                        AttachmentType.CODE -> "text/plain"
-                                        AttachmentType.DOCUMENT -> "text/plain"
-                                        AttachmentType.IMAGE -> "image/jpeg"
-                                        AttachmentType.VIDEO -> "video/mp4"
-                                        else -> "application/octet-stream"
-                                    }
-                                    if (att.type == AttachmentType.IMAGE) {
-                                        try {
-                                            val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                                                ImageDecoder.decodeBitmap(ImageDecoder.createSource(contentResolver, uri))
-                                            } else {
-                                                @Suppress("DEPRECATION")
-                                                MediaStore.Images.Media.getBitmap(contentResolver, uri)
-                                            }
-                                            val softwareBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: bitmap
-                                            image(softwareBitmap)
-                                        } catch (e: Exception) {
-                                            Log.w("ChatViewModel", "Failed to decode image attachment", e)
-                                        }
-                                    } else {
-                                        try {
-                                            contentResolver.openInputStream(uri)?.use { inputStream ->
-                                                val bytes = inputStream.readBytes()
-                                                blob(mimeType, bytes)
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.w("ChatViewModel", "Failed to read attachment stream", e)
-                                        }
-                                    }
-                                }
-                                if (trimmedPrompt.isNotBlank()) {
-                                    text(trimmedPrompt)
-                                } else {
-                                    text("Please analyze these attachments.")
-                                }
-                            }
-
-                            chat.sendMessageStream(contentInput).collect { chunk ->
+                            val fallbackClient = GenerativeModel(
+                                modelName = fallbackEngineVersion,
+                                apiKey = apiKey,
+                                systemInstruction = content { text(currentPersona.systemInstruction) },
+                                generationConfig = generationConfig { maxOutputTokens = 8192 }
+                            )
+                            fullText = ""
+                            fallbackClient.generateContentStream(dynamicContextText + "\nUser: $trimmedPrompt").collect { chunk ->
                                 chunk.text?.let { textChunk ->
                                     fullText += textChunk
                                     _messages.update { list ->
@@ -348,102 +343,31 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                 }
                             }
                             cloudSuccess = fullText.isNotBlank()
-                        } catch (e: Exception) {
-                            Log.w("ChatViewModel", "Primary Cloud Gemini API failed, trying fallback model", e)
-                            try {
-                                val fallbackClient = GenerativeModel(
-                                    modelName = fallbackEngineVersion,
-                                    apiKey = apiKey,
-                                    systemInstruction = content { text(currentPersona.systemInstruction) },
-                                    generationConfig = generationConfig { maxOutputTokens = 8192 }
-                                )
-                                fullText = ""
-                                fallbackClient.generateContentStream(dynamicContextText + "\nUser: $trimmedPrompt").collect { chunk ->
-                                    chunk.text?.let { textChunk ->
-                                        fullText += textChunk
-                                        _messages.update { list ->
-                                            list.map { msg ->
-                                                if (msg.id == responseMessageId) {
-                                                    msg.copy(text = fullText)
-                                                } else {
-                                                    msg
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                cloudSuccess = fullText.isNotBlank()
-                            } catch (e2: Exception) {
-                                Log.w("ChatViewModel", "Fallback Cloud Gemini API failed", e2)
-                            }
+                        } catch (e2: Exception) {
+                            Log.w("ChatViewModel", "Fallback Cloud Gemini API failed", e2)
                         }
+                    }
 
-                        if (!cloudSuccess && attachments.isEmpty() && aiCoreManager.isReady()) {
-                            try {
-                                fullText = ""
-                                aiCoreManager.expressContentStream(trimmedPrompt, currentPersona.systemInstruction).collect { textChunk ->
-                                    fullText += textChunk
-                                    _messages.update { list ->
-                                        list.map { msg ->
-                                            if (msg.id == responseMessageId) {
-                                                msg.copy(text = fullText)
-                                            } else {
-                                                msg
-                                            }
-                                        }
-                                    }
-                                }
-                            } catch (e3: Exception) {
-                                Log.w("ChatViewModel", "On-device AICore fallback failed", e3)
-                            }
-                        }
-
-                        if (fullText.isBlank()) {
-                            fullText = "I'm terribly sorry, Callum, I ran into a communication issue with the engines. Please try asking again!"
-                            _messages.update { list ->
-                                list.map { msg ->
-                                    if (msg.id == responseMessageId) {
-                                        msg.copy(text = fullText)
-                                    } else {
-                                        msg
-                                    }
+                    if (!cloudSuccess || fullText.isBlank()) {
+                        fullText = "I'm terribly sorry, Callum, I ran into a communication issue with the cloud service. Please try asking again!"
+                        _messages.update { list ->
+                            list.map { msg ->
+                                if (msg.id == responseMessageId) {
+                                    msg.copy(text = fullText)
+                                } else {
+                                    msg
                                 }
                             }
                         }
-                    } else {
-                        var usedLocal = false
-                        if (attachments.isEmpty() && trimmedPrompt.isNotBlank()) {
-                            try {
-                                if (aiCoreManager.isReady()) {
-                                    aiCoreManager.expressContentStream(trimmedPrompt, currentPersona.systemInstruction).collect { textChunk ->
-                                        fullText += textChunk
-                                        _messages.update { list ->
-                                            list.map { msg ->
-                                                if (msg.id == responseMessageId) {
-                                                    msg.copy(text = fullText)
-                                                } else {
-                                                    msg
-                                                }
-                                            }
-                                        }
-                                    }
-                                    usedLocal = fullText.isNotBlank()
-                                }
-                            } catch (e: Exception) {
-                                Log.w("ChatViewModel", "On-device AICore execution failed while offline", e)
-                            }
-                        }
-
-                        if (!usedLocal) {
-                            fullText = "Ah, it looks like we're offline and local consciousness isn't ready yet, Callum. Check your internet connection or try again when you're back online!"
-                            _messages.update { list ->
-                                list.map { msg ->
-                                    if (msg.id == responseMessageId) {
-                                        msg.copy(text = fullText)
-                                    } else {
-                                        msg
-                                    }
-                                }
+                    }
+                } else {
+                    fullText = "I'm offline right now, Callum. Please check your internet connection so we can continue our conversation!"
+                    _messages.update { list ->
+                        list.map { msg ->
+                            if (msg.id == responseMessageId) {
+                                msg.copy(text = fullText)
+                            } else {
+                                msg
                             }
                         }
                     }

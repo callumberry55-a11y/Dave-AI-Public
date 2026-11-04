@@ -33,6 +33,9 @@ import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
+import com.google.ai.client.generativeai.GenerativeModel
+import com.google.ai.client.generativeai.type.content
+import com.google.ai.client.generativeai.type.generationConfig
 import java.util.UUID
 
 class DaveSearchWidget : GlanceAppWidget() {
@@ -240,17 +243,21 @@ class DaveUpdateQueryAction : ActionCallback {
 class DaveQueryAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val query = parameters[QUERY_PARAM_KEY] ?: "Hello Dave"
-
         val db = ChatDatabase.getDatabase(context)
         val dao = db.messageDao()
-        val aiManager = AiCoreManager(context, dao)
 
         val response = try {
-            aiManager.expressContent(query) ?: "Dave AI: I processed your query: '$query'."
+            val config = generationConfig { maxOutputTokens = 8192 }
+            val cloudModel = GenerativeModel(
+                modelName = "gemini-1.5-pro",
+                apiKey = BuildConfig.GEMINI_API_KEY,
+                systemInstruction = content { text(DaveSystemInstruction.daveSystemInstruction) },
+                generationConfig = config
+            )
+            val result = cloudModel.generateContent(query)
+            result.text ?: "Dave AI: I processed your query: '$query'."
         } catch (e: Throwable) {
-            "Dave AI (offline): Received query '$query'."
-        } finally {
-            aiManager.close()
+            "Dave AI: Received query '$query'."
         }
 
         val currentTime = System.currentTimeMillis()

@@ -30,19 +30,15 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun testAiCoreManagerContextPrompt() = kotlinx.coroutines.runBlocking {
-        val manager = AiCoreManager()
-        val prompt = manager.buildDynamicContextPrompt("Be helpful", "Hello Dave")
+    fun testDaveSystemInstructionPrompt() {
+        val prompt = DaveSystemInstruction.daveSystemInstruction
         assertTrue("Contains Callum Berry", prompt.contains("Callum Berry"))
         assertTrue("Contains Rotherham", prompt.contains("Rotherham"))
-        assertTrue("Contains Pulse Launcher", prompt.contains("Pulse Launcher / NxtQuantum OS CP2.02.02"))
-        assertTrue("Contains Be helpful", prompt.contains("Be helpful"))
-        assertTrue("Contains Hello Dave", prompt.contains("Hello Dave"))
-        manager.close()
+        assertTrue("Contains Pulse Launcher", prompt.contains("Pulse Launcher"))
     }
 
     @Test
-    fun testDaveContextProviderAndSemanticMemory() = kotlinx.coroutines.runBlocking {
+    fun testDaveContextProvider() = kotlinx.coroutines.runBlocking {
         val provider = DaveContextProvider(null, null)
         val context = provider.captureContext("quantum launcher")
         assertEquals("Callum Berry", context.userName)
@@ -53,16 +49,6 @@ class ExampleUnitTest {
         assertTrue(formatted.contains("Callum Berry"))
         assertTrue(formatted.contains("Rotherham"))
         assertTrue(formatted.contains("Pulse Launcher / NxtQuantum OS CP2.02.02"))
-
-        val memoryManager = LocalSemanticMemoryManager(null)
-        val sampleMessages = listOf(
-            "I love programming quantum computers in Rotherham",
-            "What is the weather like today?",
-            "NxtQuantum OS is running smoothly on CP2.02.02"
-        )
-        val relevant = memoryManager.retrieveRelevantMemoriesSync("quantum computer", sampleMessages, 2)
-        assertTrue(relevant.isNotEmpty())
-        assertTrue(relevant[0].contains("quantum"))
     }
 
     @Test

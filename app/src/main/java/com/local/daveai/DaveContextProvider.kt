@@ -66,8 +66,6 @@ class DaveContextProvider(
     private val context: Context? = null,
     private val messageDao: MessageDao? = null
 ) {
-    private val semanticMemoryManager = LocalSemanticMemoryManager(messageDao)
-
     fun extractUserTraits(messages: List<String>): UserTraits {
         val likes = mutableSetOf("Quantum computing", "Jetpack Compose", "Poetry")
         val dislikes = mutableSetOf("Bugs", "Unstable builds")
@@ -135,16 +133,7 @@ class DaveContextProvider(
         }
 
         val userTraits = extractUserTraits(allMessageTexts)
-
-        val semanticMemories = if (query.isNotBlank()) {
-            if (messageDao != null) {
-                semanticMemoryManager.retrieveRelevantMemories(query, 3)
-            } else {
-                emptyList()
-            }
-        } else {
-            emptyList()
-        }
+        val semanticMemories = emptyList<String>()
 
         return DaveRuntimeContext(
             batteryLevel = battery,

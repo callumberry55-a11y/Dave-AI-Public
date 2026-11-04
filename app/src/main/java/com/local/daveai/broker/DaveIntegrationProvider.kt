@@ -6,27 +6,37 @@ import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
 import android.os.Bundle
-import com.local.daveai.AiCoreManager
+import com.google.ai.client.generativeai.GenerativeModel
+import com.google.ai.client.generativeai.type.content
+import com.google.ai.client.generativeai.type.generationConfig
+import com.local.daveai.BuildConfig
+import com.local.daveai.DaveSystemInstruction
 import com.local.daveai.storage.FileAccessManager
 import kotlinx.coroutines.runBlocking
 
 class DaveIntegrationProvider : ContentProvider() {
 
-    private lateinit var aiCoreManager: AiCoreManager
     private lateinit var commandBroker: DaveCommandBroker
+    private lateinit var cloudModel: GenerativeModel
 
     override fun onCreate(): Boolean {
         val ctx = context ?: return false
-        aiCoreManager = AiCoreManager(ctx)
         val layoutStorage = FileAccessManager(ctx, "launcher_layouts")
         val notesStorage = FileAccessManager(ctx, "dave_notes")
         commandBroker = DaveCommandBroker(layoutStorage, notesStorage)
+
+        val config = generationConfig { maxOutputTokens = 8192 }
+        cloudModel = GenerativeModel(
+            modelName = "gemini-1.5-pro",
+            apiKey = BuildConfig.GEMINI_API_KEY,
+            systemInstruction = content { text(DaveSystemInstruction.daveSystemInstruction) },
+            generationConfig = config
+        )
         return true
     }
 
     private fun verifyCaller(): Boolean {
         val caller = callingPackage
-        // Allow com.s.launcher, self, or debug/testing environments
         return caller == "com.s.launcher" || caller == context?.packageName || caller == null
     }
 
@@ -40,7 +50,11 @@ class DaveIntegrationProvider : ContentProvider() {
             "ai_prompt" -> {
                 val prompt = extras?.getString("prompt") ?: return null
                 val response = runBlocking {
-                    aiCoreManager.expressContent(prompt)
+                    try {
+                        cloudModel.generateContent(prompt).text
+                    } catch (e: Exception) {
+                        "Dave AI Error: ${e.localizedMessage}"
+                    }
                 }
                 resultBundle.putString("response", response ?: "No response")
             }
