@@ -29,6 +29,12 @@ android {
         buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
     }
 
+    sourceSets {
+        getByName("main") {
+            aidl.directories.add("src/main/aidl")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -54,6 +60,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        aidl = true
     }
     tasks.configureEach {
         if (name.contains("AarMetadata")) {

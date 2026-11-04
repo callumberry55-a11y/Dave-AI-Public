@@ -10,6 +10,10 @@
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="com.local.daveai.permission.DAVE_BRIDGE" />
+    <permission
+        android:name="com.local.daveai.permission.DAVE_BRIDGE"
+        android:protectionLevel="signature" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
     <queries>
@@ -79,6 +83,15 @@
             android:name=".broker.DaveIntegrationProvider"
             android:authorities="com.local.daveai.provider"
             android:exported="true" />
+
+        <service
+            android:name=".service.DaveBridgeService"
+            android:permission="com.local.daveai.permission.DAVE_BRIDGE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.local.daveai.bridge.BIND_DAVE" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>
