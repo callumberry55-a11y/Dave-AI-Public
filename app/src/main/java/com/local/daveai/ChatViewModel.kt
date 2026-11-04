@@ -78,7 +78,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentPersona = MutableStateFlow(DavePersona.WARM_EMPATHETIC)
     val currentPersona: StateFlow<DavePersona> = _currentPersona.asStateFlow()
 
-    private val engineVersion = "gemini-2.5-pro"
+    private val engineVersion = "gemini-1.5-pro"
+    private val fallbackEngineVersion = "gemini-1.5-flash"
     private var consciousnessClient = createConsciousnessClient(_currentPersona.value)
     private var chat = consciousnessClient.startChat()
 
@@ -283,6 +284,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 if (!handledLocally) {
                     val isOnline = isNetworkAvailable(getApplication())
                     if (isOnline) {
+                        var cloudSuccess = false
                         try {
                             val contentInput = content {
                                 text(dynamicContextText)
@@ -345,9 +347,59 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                     }
                                 }
                             }
+                            cloudSuccess = fullText.isNotBlank()
                         } catch (e: Exception) {
-                            Log.w("ChatViewModel", "Cloud Gemini API failed while online", e)
-                            fullText = "I'm terribly sorry, Callum, I couldn't reach the cloud engine and local AI isn't available. Please check your connection and try again."
+                            Log.w("ChatViewModel", "Primary Cloud Gemini API failed, trying fallback model", e)
+                            try {
+                                val fallbackClient = GenerativeModel(
+                                    modelName = fallbackEngineVersion,
+                                    apiKey = apiKey,
+                                    systemInstruction = content { text(currentPersona.systemInstruction) },
+                                    generationConfig = generationConfig { maxOutputTokens = 8192 }
+                                )
+                                fullText = ""
+                                fallbackClient.generateContentStream(dynamicContextText + "\nUser: $trimmedPrompt").collect { chunk ->
+                                    chunk.text?.let { textChunk ->
+                                        fullText += textChunk
+                                        _messages.update { list ->
+                                            list.map { msg ->
+                                                if (msg.id == responseMessageId) {
+                                                    msg.copy(text = fullText)
+                                                } else {
+                                                    msg
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                cloudSuccess = fullText.isNotBlank()
+                            } catch (e2: Exception) {
+                                Log.w("ChatViewModel", "Fallback Cloud Gemini API failed", e2)
+                            }
+                        }
+
+                        if (!cloudSuccess && attachments.isEmpty() && aiCoreManager.isReady()) {
+                            try {
+                                fullText = ""
+                                aiCoreManager.expressContentStream(trimmedPrompt, currentPersona.systemInstruction).collect { textChunk ->
+                                    fullText += textChunk
+                                    _messages.update { list ->
+                                        list.map { msg ->
+                                            if (msg.id == responseMessageId) {
+                                                msg.copy(text = fullText)
+                                            } else {
+                                                msg
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch (e3: Exception) {
+                                Log.w("ChatViewModel", "On-device AICore fallback failed", e3)
+                            }
+                        }
+
+                        if (fullText.isBlank()) {
+                            fullText = "I'm terribly sorry, Callum, I ran into a communication issue with the engines. Please try asking again!"
                             _messages.update { list ->
                                 list.map { msg ->
                                     if (msg.id == responseMessageId) {
@@ -359,13 +411,38 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         }
                     } else {
-                        fullText = "Ah, it looks like we're offline and local consciousness isn't ready yet, Callum. Check your internet connection or try again when you're back online!"
-                        _messages.update { list ->
-                            list.map { msg ->
-                                if (msg.id == responseMessageId) {
-                                    msg.copy(text = fullText)
-                                } else {
-                                    msg
+                        var usedLocal = false
+                        if (attachments.isEmpty() && trimmedPrompt.isNotBlank()) {
+                            try {
+                                if (aiCoreManager.isReady()) {
+                                    aiCoreManager.expressContentStream(trimmedPrompt, currentPersona.systemInstruction).collect { textChunk ->
+                                        fullText += textChunk
+                                        _messages.update { list ->
+                                            list.map { msg ->
+                                                if (msg.id == responseMessageId) {
+                                                    msg.copy(text = fullText)
+                                                } else {
+                                                    msg
+                                                }
+                                            }
+                                        }
+                                    }
+                                    usedLocal = fullText.isNotBlank()
+                                }
+                            } catch (e: Exception) {
+                                Log.w("ChatViewModel", "On-device AICore execution failed while offline", e)
+                            }
+                        }
+
+                        if (!usedLocal) {
+                            fullText = "Ah, it looks like we're offline and local consciousness isn't ready yet, Callum. Check your internet connection or try again when you're back online!"
+                            _messages.update { list ->
+                                list.map { msg ->
+                                    if (msg.id == responseMessageId) {
+                                        msg.copy(text = fullText)
+                                    } else {
+                                        msg
+                                    }
                                 }
                             }
                         }

@@ -27,7 +27,7 @@ enum class CoAuthorAction(val buttonText: String) {
 class LiveCanvasViewModel(application: Application) : AndroidViewModel(application) {
 
     private val apiKey = BuildConfig.GEMINI_API_KEY
-    private val modelName = "gemini-2.5-pro"
+    private val modelName = "gemini-1.5-pro"
 
     private val _mode = MutableStateFlow(LiveCanvasMode.POETRY)
     val mode: StateFlow<LiveCanvasMode> = _mode.asStateFlow()
