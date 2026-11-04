@@ -3,6 +3,7 @@ package com.local.daveai
 import android.content.Context
 import android.media.MediaPlayer
 import android.util.Log
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -20,24 +21,86 @@ class OpenAiTtsManager(private val context: Context) {
     }
 
     private var mediaPlayer: MediaPlayer? = null
+    @Volatile
+    private var isPlaying = false
 
     suspend fun speak(text: String, voice: String = "alloy"): Boolean = withContext(Dispatchers.IO) {
         if (text.isBlank()) return@withContext false
-        try {
+        stop()
+        isPlaying = true
+
+        val chunks = splitTextIntoChunks(text, maxChunkSize = 800)
+        for (chunk in chunks) {
+            if (!isPlaying) break
+            val audioFile = fetchTtsAudio(chunk, voice) ?: continue
+            if (!isPlaying) {
+                try { audioFile.delete() } catch (_: Exception) {}
+                break
+            }
+            playAudioFileSynchronously(audioFile)
+        }
+        isPlaying = false
+        true
+    }
+
+    private fun splitTextIntoChunks(text: String, maxChunkSize: Int = 800): List<String> {
+        val result = mutableListOf<String>()
+        val paragraphs = text.split("\n")
+        val currentChunk = StringBuilder()
+
+        for (paragraph in paragraphs) {
+            val trimmedPara = paragraph.trim()
+            if (trimmedPara.isEmpty()) continue
+
+            if (currentChunk.length + trimmedPara.length + 1 <= maxChunkSize) {
+                if (currentChunk.isNotEmpty()) currentChunk.append(" ")
+                currentChunk.append(trimmedPara)
+            } else {
+                val sentences = trimmedPara.split(Regex("(?<=[.!?])\\s+"))
+                for (sentence in sentences) {
+                    if (currentChunk.length + sentence.length + 1 <= maxChunkSize) {
+                        if (currentChunk.isNotEmpty()) currentChunk.append(" ")
+                        currentChunk.append(sentence)
+                    } else {
+                        if (currentChunk.isNotEmpty()) {
+                            result.add(currentChunk.toString())
+                            currentChunk.clear()
+                        }
+                        if (sentence.length > maxChunkSize) {
+                            sentence.chunked(maxChunkSize).forEach { sub ->
+                                result.add(sub)
+                            }
+                        } else {
+                            currentChunk.append(sentence)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (currentChunk.isNotEmpty()) {
+            result.add(currentChunk.toString())
+        }
+
+        return result
+    }
+
+    private fun fetchTtsAudio(chunkText: String, voice: String): File? {
+        return try {
             val url = URL(TTS_URL)
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 setRequestProperty("Authorization", "Bearer $API_KEY")
                 setRequestProperty("Content-Type", "application/json")
                 doOutput = true
-                connectTimeout = 15000
-                readTimeout = 15000
+                connectTimeout = 30000
+                readTimeout = 60000
             }
 
             val jsonBody = JSONObject().apply {
                 put("model", "tts-1")
-                put("input", text)
-                put("voice", voice) // Options: alloy, echo, fable, onyx, nova, shimmer
+                put("input", chunkText)
+                put("voice", voice)
             }
 
             connection.outputStream.use { os ->
@@ -51,23 +114,22 @@ class OpenAiTtsManager(private val context: Context) {
                         input.copyTo(output)
                     }
                 }
-
-                playAudioFile(audioFile)
-                true
+                audioFile
             } else {
                 val errorMsg = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "Unknown error"
                 Log.e(TAG, "OpenAI TTS API error: ${connection.responseCode} - $errorMsg")
-                false
+                null
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to generate or play OpenAI TTS speech", e)
-            false
+            Log.e(TAG, "Failed to fetch TTS audio chunk", e)
+            null
         }
     }
 
-    private fun playAudioFile(file: File) {
+    private suspend fun playAudioFileSynchronously(file: File) = withContext(Dispatchers.Main) {
+        val deferred = CompletableDeferred<Unit>()
         try {
-            stop()
+            mediaPlayer?.release()
             mediaPlayer = MediaPlayer().apply {
                 setDataSource(file.absolutePath)
                 prepare()
@@ -76,14 +138,26 @@ class OpenAiTtsManager(private val context: Context) {
                     release()
                     mediaPlayer = null
                     try { file.delete() } catch (_: Exception) {}
+                    if (deferred.isActive) deferred.complete(Unit)
+                }
+                setOnErrorListener { _, _, _ ->
+                    release()
+                    mediaPlayer = null
+                    try { file.delete() } catch (_: Exception) {}
+                    if (deferred.isActive) deferred.complete(Unit)
+                    true
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error playing audio file", e)
+            try { file.delete() } catch (_: Exception) {}
+            if (deferred.isActive) deferred.complete(Unit)
         }
+        deferred.await()
     }
 
     fun stop() {
+        isPlaying = false
         try {
             mediaPlayer?.stop()
             mediaPlayer?.release()

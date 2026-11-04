@@ -66,7 +66,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val aiEngineMode = settingsManager.aiEngineModeFlow.stateIn(
         scope = viewModelScope,
         started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
-        initialValue = AiEngineMode.ON_DEVICE
+        initialValue = AiEngineMode.CLOUD
     )
 
     override fun onCleared() {
