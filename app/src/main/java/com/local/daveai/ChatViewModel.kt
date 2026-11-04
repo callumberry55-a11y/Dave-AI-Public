@@ -17,9 +17,11 @@ import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.content
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -59,6 +61,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val aiCoreManager = AiCoreManager(application, messageDao)
     private val ttsManager = OpenAiTtsManager(application)
     private val webSearchManager = DaveWebSearchManager()
+    private val settingsManager = DaveSettingsManager(application)
+    val aiEngineMode = settingsManager.aiEngineModeFlow.stateIn(
+        scope = viewModelScope,
+        started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000),
+        initialValue = AiEngineMode.ON_DEVICE
+    )
 
     override fun onCleared() {
         super.onCleared()
@@ -241,7 +249,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
                 var fullText = ""
                 val currentPersona = _currentPersona.value
-                val canUseLocal = attachments.isEmpty() && trimmedPrompt.isNotBlank()
+                val currentEngineMode = aiEngineMode.value
+                val canUseLocal = currentEngineMode == AiEngineMode.ON_DEVICE && attachments.isEmpty() && trimmedPrompt.isNotBlank()
                 var handledLocally = false
 
                 if (canUseLocal) {

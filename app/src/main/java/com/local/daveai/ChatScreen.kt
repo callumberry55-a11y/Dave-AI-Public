@@ -65,6 +65,7 @@ private fun getFileName(context: Context, uri: Uri): String {
 fun ChatScreen(
     viewModel: ChatViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
     onNavigateToLiveCanvas: () -> Unit = {},
+    onNavigateToSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -208,6 +209,13 @@ fun ChatScreen(
                                 }
                             },
                             actions = {
+                                IconButton(onClick = onNavigateToSettings) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Settings,
+                                        contentDescription = "Settings",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                                 IconButton(onClick = onNavigateToLiveCanvas) {
                                     Icon(
                                         imageVector = Icons.Rounded.EditNote,

@@ -21,6 +21,9 @@ data object ChatRoute
 @Serializable
 data object LiveCanvasRoute
 
+@Serializable
+data object SettingsRoute
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,11 +45,21 @@ class MainActivity : ComponentActivity() {
                                     ChatScreen(
                                         onNavigateToLiveCanvas = {
                                             backStack.add(LiveCanvasRoute)
+                                        },
+                                        onNavigateToSettings = {
+                                            backStack.add(SettingsRoute)
                                         }
                                     )
                                 }
                                 is LiveCanvasRoute -> NavEntry(key) {
                                     LiveCanvasScreen(
+                                        onBack = {
+                                            backStack.removeLastOrNull()
+                                        }
+                                    )
+                                }
+                                is SettingsRoute -> NavEntry(key) {
+                                    SettingsScreen(
                                         onBack = {
                                             backStack.removeLastOrNull()
                                         }
