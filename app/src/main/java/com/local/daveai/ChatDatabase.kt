@@ -5,9 +5,11 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [MessageEntity::class], version = 1, exportSchema = false)
+@Database(entities = [MessageEntity::class, SecondBrainEntity::class, UserProfileEntity::class], version = 6, exportSchema = false)
 abstract class ChatDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
+    abstract fun secondBrainDao(): SecondBrainDao
+    abstract fun userProfileDao(): UserProfileDao
 
     companion object {
         @Volatile
@@ -19,7 +21,9 @@ abstract class ChatDatabase : RoomDatabase() {
                     context.applicationContext,
                     ChatDatabase::class.java,
                     "chat_database"
-                ).build()
+                )
+                .fallbackToDestructiveMigration(true)
+                .build()
                 INSTANCE = instance
                 instance
             }

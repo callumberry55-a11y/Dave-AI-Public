@@ -22,4 +22,7 @@ interface MessageDao {
 
     @Query("DELETE FROM messages WHERE persona = :persona")
     suspend fun clearMessagesForPersona(persona: String)
+
+    @Query("DELETE FROM messages")
+    suspend fun clearAllMessages()
 }

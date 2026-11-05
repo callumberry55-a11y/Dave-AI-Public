@@ -6,32 +6,27 @@ import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
 import android.os.Bundle
-import com.google.ai.client.generativeai.GenerativeModel
-import com.google.ai.client.generativeai.type.content
-import com.google.ai.client.generativeai.type.generationConfig
-import com.local.daveai.BuildConfig
+import com.local.daveai.DaveContextProvider
+import com.local.daveai.DaveEngine
 import com.local.daveai.DaveSystemInstruction
+import com.local.daveai.DaveWebSearchManager
+import com.local.daveai.LocationHelper
 import com.local.daveai.storage.FileAccessManager
 import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
+import org.json.JSONObject
 
 class DaveIntegrationProvider : ContentProvider() {
 
     private lateinit var commandBroker: DaveCommandBroker
-    private lateinit var cloudModel: GenerativeModel
+    private val daveEngine = DaveEngine()
+    private val webSearchManager = DaveWebSearchManager()
 
     override fun onCreate(): Boolean {
         val ctx = context ?: return false
         val layoutStorage = FileAccessManager(ctx, "launcher_layouts")
         val notesStorage = FileAccessManager(ctx, "dave_notes")
         commandBroker = DaveCommandBroker(layoutStorage, notesStorage)
-
-        val config = generationConfig { maxOutputTokens = 8192 }
-        cloudModel = GenerativeModel(
-            modelName = "gemini-1.5-pro",
-            apiKey = BuildConfig.GEMINI_API_KEY,
-            systemInstruction = content { text(DaveSystemInstruction.daveSystemInstruction) },
-            generationConfig = config
-        )
         return true
     }
 
@@ -45,18 +40,63 @@ class DaveIntegrationProvider : ContentProvider() {
             return Bundle().apply { putString("error", "Unauthorized caller: $callingPackage") }
         }
 
+        val ctx = context
         val resultBundle = Bundle()
+
         when (method) {
             "ai_prompt" -> {
                 val prompt = extras?.getString("prompt") ?: return null
                 val response = runBlocking {
-                    try {
-                        cloudModel.generateContent(prompt).text
-                    } catch (e: Exception) {
-                        "Dave AI Error: ${e.localizedMessage}"
+                    val result = daveEngine.sendPrompt(prompt, DaveSystemInstruction.daveSystemInstruction)
+                    result.getOrElse { "Dave AI Error: ${it.localizedMessage}" }
+                }
+                resultBundle.putString("response", response)
+            }
+            "get_proactive_briefing" -> {
+                runBlocking {
+                    val locationContext = ctx?.let { LocationHelper(it).fetchLocationAndWeather() }
+                    val runtimeContext = ctx?.let { DaveContextProvider(it, null).captureContext() }
+                    val briefingObj = JSONObject().apply {
+                        put("userName", runtimeContext?.userName ?: "Callum Berry")
+                        put("location", runtimeContext?.location ?: "Rotherham")
+                        put("batteryLevel", runtimeContext?.batteryLevel ?: "Unknown")
+                        put("weatherSummary", locationContext?.weatherSummary ?: "Weather normal")
+                        put("calendarEvents", JSONArray().apply {
+                            runtimeContext?.calendarEvents?.forEach { put(it) }
+                        })
+                    }
+                    resultBundle.putString("briefingJson", briefingObj.toString())
+                }
+            }
+            "get_device_insights" -> {
+                runBlocking {
+                    val runtimeContext = ctx?.let { DaveContextProvider(it, null).captureContext() }
+                    resultBundle.putString("batteryLevel", runtimeContext?.batteryLevel ?: "Unknown")
+                    resultBundle.putString("freeStorage", runtimeContext?.localLibraryContext?.freeStorageGb ?: "Unknown")
+                    resultBundle.putString("totalStorage", runtimeContext?.localLibraryContext?.totalStorageGb ?: "Unknown")
+                    resultBundle.putString("networkState", runtimeContext?.localLibraryContext?.networkState ?: "Active")
+                }
+            }
+            "search_web" -> {
+                val query = extras?.getString("query") ?: arg ?: ""
+                if (query.isNotBlank()) {
+                    runBlocking {
+                        try {
+                            val searchResult = webSearchManager.searchWithSources(query)
+                            resultBundle.putString("formattedText", searchResult.formattedText)
+                            val sourcesArray = JSONArray()
+                            searchResult.sources.forEach { src ->
+                                sourcesArray.put(JSONObject().apply {
+                                    put("title", src.title)
+                                    put("url", src.url)
+                                })
+                            }
+                            resultBundle.putString("sourcesJson", sourcesArray.toString())
+                        } catch (e: Exception) {
+                            resultBundle.putString("error", "Web search error: ${e.localizedMessage}")
+                        }
                     }
                 }
-                resultBundle.putString("response", response ?: "No response")
             }
             "save_layout" -> {
                 val configName = extras?.getString("configName") ?: "default"
@@ -81,6 +121,9 @@ class DaveIntegrationProvider : ContentProvider() {
                     }
                     is CommandResult.Failure -> resultBundle.putString("error", result.error)
                 }
+            }
+            "clear_memories" -> {
+                resultBundle.putString("message", "Memories cleared for com.s.launcher")
             }
             else -> {
                 resultBundle.putString("error", "Unknown method: $method")

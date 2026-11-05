@@ -54,16 +54,43 @@ class LocationHelper(private val context: Context) {
                         locationName = listOfNotNull(addr.locality, addr.adminArea, addr.countryName).joinToString(", ")
                     }
                 }
-            } catch (ignored: Exception) {
+            } catch (_: Exception) {}
+
+            try {
+                if (locationName == null) {
+                    val nomResp = FreeEnvironmentClient.nominatim.reverseGeocode(lat, lon)
+                    val addr = nomResp.address
+                    if (addr != null) {
+                        locationName = listOfNotNull(addr.suburb ?: addr.neighbourhood, addr.city ?: addr.town ?: addr.county, addr.country).joinToString(", ")
+                    }
+                }
+            } catch (_: Exception) {}
+
+            var weatherDetails: String? = null
+            try {
+                val weatherResp = FreeEnvironmentClient.openMeteoWeather.getCurrentWeather(lat, lon)
+                val cw = weatherResp.currentWeather
+                if (cw != null) {
+                    val aqiResp = try { FreeEnvironmentClient.openMeteoAirQuality.getAirQuality(lat, lon) } catch (_: Exception) { null }
+                    val aqiText = aqiResp?.current?.usAqi?.let { " | AQI: $it" } ?: ""
+                    weatherDetails = "${cw.temperature}°C, Wind ${cw.windspeed} km/h$aqiText"
+                }
+            } catch (_: Exception) {}
+
+            val summary = buildString {
+                append("Location: ${locationName ?: "Lat: $lat, Lon: $lon"}")
+                if (weatherDetails != null) {
+                    append(" ($weatherDetails)")
+                }
             }
 
             LocationWeatherContext(
                 locationName = locationName ?: "Lat: $lat, Lon: $lon",
                 latitude = lat,
                 longitude = lon,
-                weatherSummary = "Current user location: ${locationName ?: "Lat: $lat, Lon: $lon"} (Coordinates: $lat, $lon)"
+                weatherSummary = summary
             )
-        } catch (ignored: Exception) {
+        } catch (_: Exception) {
             LocationWeatherContext()
         }
     }

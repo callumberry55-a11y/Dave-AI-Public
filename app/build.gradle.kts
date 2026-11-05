@@ -1,5 +1,3 @@
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -7,26 +5,17 @@ plugins {
     alias(libs.plugins.jetbrains.kotlin.plugin.serialization)
 }
 
-val localProperties = Properties().apply {
-    val file = rootProject.file("local.properties")
-    if (file.exists()) {
-        load(file.inputStream())
-    }
-}
-val geminiApiKey = localProperties.getProperty("GEMINI_API_KEY", "")
-
 android {
     namespace = "com.local.daveai"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.local.daveai"
-        minSdk = 26
-        targetSdk = 35
-        versionCode = 3
-        versionName = "CP2.03.03"
+        minSdk = 24
+        targetSdk = 36
+        versionCode = 5
+        versionName = "CP5.01.01"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
     }
 
     sourceSets {
@@ -100,7 +89,10 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.runtime)
     implementation(libs.coil.compose)
-    implementation(libs.generativeai)
+    implementation(libs.okhttp)
+    implementation(libs.retrofit)
+    implementation(libs.converter.gson)
+    implementation(libs.gson)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.core)
@@ -110,7 +102,6 @@ dependencies {
     testImplementation(libs.androidx.junit)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)

@@ -8,8 +8,7 @@
 # Keep Glance ActionCallbacks for reflection instantiation
 -keep class * implements androidx.glance.appwidget.action.ActionCallback { public <init>(); }
 
-# Keep Gemini Client and kotlinx.serialization
--keep class com.google.ai.client.generativeai.** { *; }
+# Keep kotlinx.serialization
 -keep class kotlinx.serialization.** { *; }
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
 

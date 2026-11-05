@@ -1,20 +1,18 @@
 package com.local.daveai
 
-import android.content.Context
+import android.content.Intent
 import android.net.Uri
-import android.provider.OpenableColumns
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
@@ -26,39 +24,21 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
+import com.local.daveai.ui.common.AuraGlowCanvas
+import com.local.daveai.ui.common.GlassCard
+import com.local.daveai.ui.common.UnifiedGlassSurface
 import com.local.daveai.ui.theme.DaveTheme
+import com.local.daveai.ui.theme.NeonCyan
 import kotlinx.coroutines.launch
-
-private fun getFileName(context: Context, uri: Uri): String {
-    var result: String? = null
-    if (uri.scheme == "content") {
-        try {
-            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex != -1) {
-                        result = cursor.getString(nameIndex)
-                    }
-                }
-            }
-        } catch (_: Exception) {}
-    }
-    if (result == null) {
-        result = uri.path
-        val cut = result?.lastIndexOf('/')
-        if (cut != null && cut != -1) {
-            result = result.substring(cut + 1)
-        }
-    }
-    return result ?: "attachment"
-}
 
 @OptIn(ExperimentalMaterial3AdaptiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -68,59 +48,62 @@ fun ChatScreen(
     onNavigateToSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val navigator = rememberListDetailPaneScaffoldNavigator<Any>()
     val coroutineScope = rememberCoroutineScope()
 
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val inputText by viewModel.inputText.collectAsStateWithLifecycle()
+    val isListeningVoice by viewModel.isListeningVoice.collectAsStateWithLifecycle()
+    val attachedFiles by viewModel.attachedFiles.collectAsStateWithLifecycle()
     val currentPersona by viewModel.currentPersona.collectAsStateWithLifecycle()
-    val pendingAttachments by viewModel.pendingAttachments.collectAsStateWithLifecycle()
+    val runtimeContext by viewModel.runtimeContext.collectAsStateWithLifecycle()
+    val allProfiles by viewModel.allProfiles.collectAsStateWithLifecycle()
+    val activeProfile by viewModel.activeProfile.collectAsStateWithLifecycle()
+
+    val filePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { viewModel.attachFile(it) }
+    }
 
     val listState = rememberLazyListState()
 
     var showPersonaMenu by remember { mutableStateOf(false) }
-    var showAttachmentMenu by remember { mutableStateOf(false) }
-
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let { viewModel.addAttachment(it, AttachmentType.IMAGE, getFileName(context, it)) }
-    }
-
-    val videoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let { viewModel.addAttachment(it, AttachmentType.VIDEO, getFileName(context, it)) }
-    }
-
-    val pdfPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let { viewModel.addAttachment(it, AttachmentType.PDF, getFileName(context, it)) }
-    }
-
-    val codePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let { viewModel.addAttachment(it, AttachmentType.CODE, getFileName(context, it)) }
-    }
-
-    val documentPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            val type = viewModel.determineAttachmentType(it)
-            viewModel.addAttachment(it, type, getFileName(context, it))
-        }
-    }
+    var showOverflowMenu by remember { mutableStateOf(false) }
+    var showProfileSheet by remember { mutableStateOf(false) }
+    var showCreateProfileDialog by remember { mutableStateOf(false) }
 
     // Scroll to bottom when new messages arrive
     LaunchedEffect(messages.size, messages.lastOrNull()?.text) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
         }
+    }
+
+    if (showCreateProfileDialog) {
+        CreateProfileDialog(
+            onDismiss = { showCreateProfileDialog = false },
+            onCreateProfile = { name, location, profession, hobbies, likes ->
+                viewModel.createProfile(name, location, profession, hobbies, likes)
+            }
+        )
+    }
+
+    if (showProfileSheet) {
+        LocalProfileSheet(
+            runtimeContext = runtimeContext,
+            allProfiles = allProfiles,
+            activeProfile = activeProfile,
+            onDismiss = { showProfileSheet = false },
+            onCreateProfileClick = { showCreateProfileDialog = true },
+            onSelectProfile = { profileId -> viewModel.switchProfile(profileId) },
+            onDeleteProfile = { profileId -> viewModel.deleteProfile(profileId) },
+            onClearHistory = {
+                viewModel.clearLocalHistory()
+                showProfileSheet = false
+            }
+        )
     }
 
     ListDetailPaneScaffold(
@@ -185,7 +168,7 @@ fun ChatScreen(
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
-                                            text = "Persona: ${currentPersona.displayName}",
+                                            text = "Claude AI Online • ${currentPersona.displayName}",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.primary,
                                             maxLines = 1,
@@ -209,26 +192,74 @@ fun ChatScreen(
                                 }
                             },
                             actions = {
-                                IconButton(onClick = onNavigateToSettings) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Settings,
-                                        contentDescription = "Settings",
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                                IconButton(onClick = onNavigateToLiveCanvas) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.EditNote,
-                                        contentDescription = "Live Collaborative Canvas",
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
                                 Box {
-                                    IconButton(onClick = { showPersonaMenu = true }) {
+                                    IconButton(onClick = { showOverflowMenu = true }) {
                                         Icon(
-                                            imageVector = Icons.Rounded.Psychology,
-                                            contentDescription = "Select Emotional Persona",
+                                            imageVector = Icons.Rounded.MoreVert,
+                                            contentDescription = "More Options",
                                             tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+
+                                    DropdownMenu(
+                                        expanded = showOverflowMenu,
+                                        onDismissRequest = { showOverflowMenu = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Callum's Profile & Memory") },
+                                            onClick = {
+                                                showOverflowMenu = false
+                                                showProfileSheet = true
+                                            },
+                                            leadingIcon = {
+                                                Icon(Icons.Rounded.Badge, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                            }
+                                        )
+
+                                        DropdownMenuItem(
+                                            text = { Text("Select Persona") },
+                                            onClick = {
+                                                showOverflowMenu = false
+                                                showPersonaMenu = true
+                                            },
+                                            leadingIcon = {
+                                                Icon(Icons.Rounded.Psychology, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                            }
+                                        )
+
+                                        DropdownMenuItem(
+                                            text = { Text("Live Collaborative Canvas") },
+                                            onClick = {
+                                                showOverflowMenu = false
+                                                onNavigateToLiveCanvas()
+                                            },
+                                            leadingIcon = {
+                                                Icon(Icons.Rounded.EditNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                            }
+                                        )
+
+                                        DropdownMenuItem(
+                                            text = { Text("Clear Chat History") },
+                                            onClick = {
+                                                showOverflowMenu = false
+                                                viewModel.clearChat()
+                                            },
+                                            leadingIcon = {
+                                                Icon(Icons.Rounded.DeleteSweep, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                                            }
+                                        )
+
+                                        HorizontalDivider()
+
+                                        DropdownMenuItem(
+                                            text = { Text("Settings") },
+                                            onClick = {
+                                                showOverflowMenu = false
+                                                onNavigateToSettings()
+                                            },
+                                            leadingIcon = {
+                                                Icon(Icons.Rounded.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                            }
                                         )
                                     }
                                     DropdownMenu(
@@ -236,7 +267,7 @@ fun ChatScreen(
                                         onDismissRequest = { showPersonaMenu = false }
                                     ) {
                                         Text(
-                                            text = "Select Sentient Persona",
+                                            text = "Select Persona",
                                             style = MaterialTheme.typography.labelMedium,
                                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                             color = MaterialTheme.colorScheme.outline
@@ -278,82 +309,76 @@ fun ChatScreen(
                                     .fillMaxWidth()
                                     .navigationBarsPadding()
                                     .imePadding()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
                             ) {
-                                // Horizontal scrolling multi-attachment preview carousel above the input bar
-                                if (pendingAttachments.isNotEmpty()) {
+                                // Rapid-fire prompt action chips above input
+                                LazyRow(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val actionChips = listOf(
+                                        "⚡ Quick Brainstorm" to "Dave, let's rapidly brainstorm ideas for our project.",
+                                        "💻 Kotlin Code" to "Dave, can you help me write an algorithm in Kotlin?",
+                                        "📅 Schedule Meeting" to "Schedule a meeting with Callum on my calendar",
+                                        "📝 Log Note" to "Log note: Review project architecture roadmap",
+                                        "💡 Philosophy" to "What is your perspective on human consciousness?"
+                                    )
+                                    items(actionChips) { (label, fullPrompt) ->
+                                        SuggestionChip(
+                                            onClick = { viewModel.sendMessage(fullPrompt) },
+                                            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                                            )
+                                        )
+                                    }
+                                }
+
+                                if (attachedFiles.isNotEmpty()) {
                                     LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(bottom = 8.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            .padding(bottom = 8.dp)
                                     ) {
-                                        items(pendingAttachments, key = { it.uri }) { att ->
+                                        items(attachedFiles) { att ->
                                             Surface(
-                                                shape = RoundedCornerShape(12.dp),
-                                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                                modifier = Modifier.width(130.dp)
+                                                shape = RoundedCornerShape(16.dp),
+                                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                                modifier = Modifier.padding(2.dp)
                                             ) {
-                                                Box(modifier = Modifier.padding(8.dp)) {
-                                                    Column {
-                                                        if (att.type == AttachmentType.IMAGE) {
-                                                            AsyncImage(
-                                                                model = Uri.parse(att.uri),
-                                                                contentDescription = att.name,
-                                                                modifier = Modifier
-                                                                    .fillMaxWidth()
-                                                                    .height(64.dp)
-                                                                    .clip(RoundedCornerShape(8.dp)),
-                                                                contentScale = ContentScale.Crop
-                                                            )
-                                                        } else {
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .fillMaxWidth()
-                                                                    .height(64.dp)
-                                                                    .background(
-                                                                        MaterialTheme.colorScheme.primaryContainer,
-                                                                        RoundedCornerShape(8.dp)
-                                                                    ),
-                                                                contentAlignment = Alignment.Center
-                                                            ) {
-                                                                Icon(
-                                                                    imageVector = when (att.type) {
-                                                                        AttachmentType.VIDEO -> Icons.Rounded.Videocam
-                                                                        AttachmentType.PDF -> Icons.Rounded.PictureAsPdf
-                                                                        AttachmentType.CODE -> Icons.Rounded.Code
-                                                                        AttachmentType.DOCUMENT -> Icons.Rounded.Description
-                                                                        else -> Icons.AutoMirrored.Rounded.InsertDriveFile
-                                                                    },
-                                                                    contentDescription = null,
-                                                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                                                )
-                                                            }
-                                                        }
-                                                        Spacer(modifier = Modifier.height(4.dp))
-                                                        Text(
-                                                            text = att.name,
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis,
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                        )
-                                                    }
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = when {
+                                                            att.mimeType.startsWith("image/") -> Icons.Rounded.Image
+                                                            att.mimeType.startsWith("video/") -> Icons.Rounded.Videocam
+                                                            att.mimeType.startsWith("audio/") -> Icons.Rounded.AudioFile
+                                                            else -> Icons.Rounded.Description
+                                                        },
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(16.dp),
+                                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(
+                                                        text = att.name,
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
                                                     IconButton(
-                                                        onClick = { viewModel.removeAttachment(att.uri) },
-                                                        modifier = Modifier
-                                                            .align(Alignment.TopEnd)
-                                                            .size(24.dp)
-                                                            .background(
-                                                                MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-                                                                RoundedCornerShape(12.dp)
-                                                            )
+                                                        onClick = { viewModel.removeAttachment(att) },
+                                                        modifier = Modifier.size(20.dp)
                                                     ) {
                                                         Icon(
                                                             imageVector = Icons.Rounded.Close,
                                                             contentDescription = "Remove attachment",
-                                                            modifier = Modifier.size(14.dp),
-                                                            tint = MaterialTheme.colorScheme.onSurface
+                                                            modifier = Modifier.size(14.dp)
                                                         )
                                                     }
                                                 }
@@ -362,76 +387,62 @@ fun ChatScreen(
                                     }
                                 }
 
+                                if (isListeningVoice) {
+                                    Surface(
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = MaterialTheme.colorScheme.errorContainer,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(bottom = 8.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.GraphicEq,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "Listening to Callum...",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onErrorContainer
+                                            )
+                                        }
+                                    }
+                                }
+
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Box {
-                                        IconButton(
-                                            onClick = { showAttachmentMenu = true },
-                                            modifier = Modifier.size(48.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.AttachFile,
-                                                contentDescription = "Attach file, image, video or document",
-                                                tint = MaterialTheme.colorScheme.primary
-                                            )
+                                    IconButton(
+                                        onClick = { filePickerLauncher.launch("*/*") }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.AttachFile,
+                                            contentDescription = "Attach file or media",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = {
+                                            if (isListeningVoice) {
+                                                viewModel.stopVoiceInput()
+                                            } else {
+                                                viewModel.startVoiceInput()
+                                            }
                                         }
-                                        DropdownMenu(
-                                            expanded = showAttachmentMenu,
-                                            onDismissRequest = { showAttachmentMenu = false }
-                                        ) {
-                                            DropdownMenuItem(
-                                                text = { Text("Attach Image") },
-                                                onClick = {
-                                                    showAttachmentMenu = false
-                                                    imagePickerLauncher.launch("image/*")
-                                                },
-                                                leadingIcon = {
-                                                    Icon(Icons.Rounded.Image, contentDescription = null)
-                                                }
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text("Attach Video") },
-                                                onClick = {
-                                                    showAttachmentMenu = false
-                                                    videoPickerLauncher.launch("video/*")
-                                                },
-                                                leadingIcon = {
-                                                    Icon(Icons.Rounded.Videocam, contentDescription = null)
-                                                }
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text("Attach PDF") },
-                                                onClick = {
-                                                    showAttachmentMenu = false
-                                                    pdfPickerLauncher.launch("application/pdf")
-                                                },
-                                                leadingIcon = {
-                                                    Icon(Icons.Rounded.PictureAsPdf, contentDescription = null)
-                                                }
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text("Attach Code File") },
-                                                onClick = {
-                                                    showAttachmentMenu = false
-                                                    codePickerLauncher.launch("*/*")
-                                                },
-                                                leadingIcon = {
-                                                    Icon(Icons.Rounded.Code, contentDescription = null)
-                                                }
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text("Attach Document / File") },
-                                                onClick = {
-                                                    showAttachmentMenu = false
-                                                    documentPickerLauncher.launch("*/*")
-                                                },
-                                                leadingIcon = {
-                                                    Icon(Icons.AutoMirrored.Rounded.InsertDriveFile, contentDescription = null)
-                                                }
-                                            )
-                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isListeningVoice) Icons.Rounded.GraphicEq else Icons.Rounded.Mic,
+                                            contentDescription = "Voice Input",
+                                            tint = if (isListeningVoice) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                        )
                                     }
 
                                     Spacer(modifier = Modifier.width(4.dp))
@@ -442,7 +453,7 @@ fun ChatScreen(
                                         modifier = Modifier
                                             .weight(1f)
                                             .heightIn(min = 56.dp),
-                                        placeholder = { Text("Ask Dave anything...") },
+                                        placeholder = { Text("Message Dave...") },
                                         shape = RoundedCornerShape(28.dp),
                                         maxLines = 4,
                                         colors = OutlinedTextFieldDefaults.colors(
@@ -454,8 +465,13 @@ fun ChatScreen(
                                     Spacer(modifier = Modifier.width(8.dp))
 
                                     FilledIconButton(
-                                        onClick = { viewModel.sendMessage(inputText) },
-                                        enabled = (inputText.isNotBlank() || pendingAttachments.isNotEmpty()) && !isLoading,
+                                        onClick = {
+                                            val textToSend = inputText.trim()
+                                            if ((textToSend.isNotBlank() || attachedFiles.isNotEmpty()) && !isLoading) {
+                                                viewModel.sendMessage(textToSend)
+                                            }
+                                        },
+                                        enabled = (inputText.isNotBlank() || attachedFiles.isNotEmpty()) && !isLoading,
                                         modifier = Modifier.size(52.dp),
                                         shape = RoundedCornerShape(26.dp)
                                     ) {
@@ -482,6 +498,7 @@ fun ChatScreen(
                             .fillMaxSize()
                             .padding(innerPadding)
                     ) {
+                        AuraGlowCanvas(enabled = true, accentColor = NeonCyan)
                         LazyColumn(
                             state = listState,
                             modifier = Modifier
@@ -493,8 +510,30 @@ fun ChatScreen(
                             items(messages, key = { it.id }) { message ->
                                 MessageBubble(
                                     message = message,
-                                    onSpeak = { text -> viewModel.speakMessage(text) }
+                                    onSpeak = { text -> viewModel.speakMessage(text) },
+                                    onExecuteAction = { id, action -> viewModel.executeAction(id, action) }
                                 )
+                            }
+
+                            if (isLoading) {
+                                item {
+                                    Row(
+                                        modifier = Modifier.padding(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "Dave is thinking...",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -502,6 +541,167 @@ fun ChatScreen(
             }
         }
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LocalProfileSheet(
+    runtimeContext: DaveRuntimeContext,
+    allProfiles: List<UserProfileEntity>,
+    activeProfile: UserProfileEntity?,
+    onDismiss: () -> Unit,
+    onCreateProfileClick: () -> Unit,
+    onSelectProfile: (String) -> Unit,
+    onDeleteProfile: (String) -> Unit,
+    onClearHistory: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Badge,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "${runtimeContext.userName}'s Local Profile",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Active Local Memory Context",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                IconButton(onClick = onCreateProfileClick) {
+                    Icon(
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = "Create New Profile",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            HorizontalDivider()
+
+            if (allProfiles.isNotEmpty()) {
+                Text(
+                    text = "Switch User Profile",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(allProfiles) { profile ->
+                        FilterChip(
+                            selected = profile.isActive || activeProfile?.profileId == profile.profileId,
+                            onClick = { onSelectProfile(profile.profileId) },
+                            label = { Text(profile.name) },
+                            leadingIcon = if (profile.isActive) {
+                                { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                            } else null,
+                            trailingIcon = if (allProfiles.size > 1 && !profile.isActive) {
+                                {
+                                    IconButton(
+                                        onClick = { onDeleteProfile(profile.profileId) },
+                                        modifier = Modifier.size(18.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.Close, contentDescription = "Delete Profile", modifier = Modifier.size(14.dp))
+                                    }
+                                }
+                            } else null
+                        )
+                    }
+                }
+            }
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(text = "👤 User: ${runtimeContext.userName}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    Text(text = "📍 Location: ${runtimeContext.location}", style = MaterialTheme.typography.bodySmall)
+                    Text(text = "💻 Environment: ${runtimeContext.operatingSystem}", style = MaterialTheme.typography.bodySmall)
+                    Text(text = "🛠️ Profession: ${runtimeContext.userTraits.profession}", style = MaterialTheme.typography.bodySmall)
+                    if (runtimeContext.userTraits.likes.isNotEmpty()) {
+                        Text(text = "❤️ Likes: ${runtimeContext.userTraits.likes.joinToString(", ")}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (runtimeContext.userTraits.hobbies.isNotEmpty()) {
+                        Text(text = "🎨 Hobbies: ${runtimeContext.userTraits.hobbies.joinToString(", ")}", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Language,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "🌐 Web Search Active • Real-Time World Learning",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+
+            if (runtimeContext.semanticMemories.isNotEmpty()) {
+                Text(text = "Relevant Semantic Memory", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    runtimeContext.semanticMemories.forEach { mem ->
+                        Text(text = "• $mem", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = onClearHistory,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Rounded.DeleteSweep, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Clear Local History")
+                }
+
+                Button(onClick = onDismiss) {
+                    Text("Done")
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -539,7 +739,7 @@ fun SidePaneContent(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Adaptive Layout & Personas",
+                        text = "Adaptive Personas & Prompts",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline
                     )
@@ -647,15 +847,11 @@ fun SidePaneContent(
 @Composable
 fun MessageBubble(
     message: ChatMessage,
-    onSpeak: (String) -> Unit = {}
+    onSpeak: (String) -> Unit = {},
+    onExecuteAction: (String, ExtractedAction) -> Unit = { _, _ -> }
 ) {
     val isUser = message.isUser
-    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
-    val backgroundColor = if (isUser) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant
-    }
+    val clipboardManager = LocalClipboardManager.current
     val contentColor = if (isUser) {
         MaterialTheme.colorScheme.onPrimaryContainer
     } else {
@@ -667,80 +863,99 @@ fun MessageBubble(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = alignment
     ) {
-        Surface(
-            shape = RoundedCornerShape(
-                topStart = 20.dp,
-                topEnd = 20.dp,
-                bottomStart = if (isUser) 20.dp else 4.dp,
-                bottomEnd = if (isUser) 4.dp else 20.dp
-            ),
-            color = backgroundColor,
+        GlassCard(
+            cornerRadius = 20.dp,
+            tintColor = if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.28f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.35f),
+            borderColor = if (isUser) NeonCyan.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.25f),
             modifier = Modifier.widthIn(max = 320.dp)
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                val resolvedAttachments = message.getResolvedAttachments()
-                if (resolvedAttachments.isNotEmpty()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        resolvedAttachments.forEach { att ->
-                            if (att.type == AttachmentType.IMAGE) {
-                                AsyncImage(
-                                    model = Uri.parse(att.uri),
-                                    contentDescription = att.name,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(180.dp)
-                                        .clip(RoundedCornerShape(12.dp)),
-                                    contentScale = ContentScale.Crop
-                                )
-                            } else {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = when (att.type) {
-                                                AttachmentType.VIDEO -> Icons.Rounded.Videocam
-                                                AttachmentType.PDF -> Icons.Rounded.PictureAsPdf
-                                                AttachmentType.CODE -> Icons.Rounded.Code
-                                                AttachmentType.DOCUMENT -> Icons.Rounded.Description
-                                                else -> Icons.AutoMirrored.Rounded.InsertDriveFile
-                                            },
-                                            contentDescription = null,
-                                            tint = contentColor
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = att.name,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = contentColor,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
                 if (message.text.isNotBlank()) {
                     Text(
                         text = message.text,
                         style = MaterialTheme.typography.bodyLarge,
                         color = contentColor
                     )
+                }
+
+                // Extracted Device Action Intent Card
+                message.extractedAction?.let { action ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    IntentActionCard(
+                        action = action,
+                        onExecute = { onExecuteAction(message.id, action) }
+                    )
+                }
+
+                // Web Source Chips (only show when valid web search sources exist)
+                val validWebSources = remember(message.webSources) {
+                    message.webSources.filter { it.url.isNotBlank() && it.url.startsWith("http") }
+                }
+                if (!isUser && validWebSources.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    Text(
+                        text = "Sources Used:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = contentColor.copy(alpha = 0.7f)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(validWebSources) { source ->
+                            SuggestionChip(
+                                onClick = {
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(source.url))
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {}
+                                },
+                                label = {
+                                    Text(
+                                        text = source.title,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Language,
+                                        contentDescription = "Open Source Link",
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                },
+                                colors = SuggestionChipDefaults.suggestionChipColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                                )
+                            )
+                        }
+                    }
+                }
+
+                // Latency Pill for Claude AI Response
+                if (!isUser && message.generationTimeMs != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.8f)
+                        ) {
+                            Text(
+                                text = "☁️ Claude 3.5 • ${String.format(java.util.Locale.US, "%.1fs", message.generationTimeMs / 1000.0)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 10.sp,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 }
 
                 if (!isUser && message.text.isNotBlank()) {
@@ -764,7 +979,7 @@ fun MessageBubble(
                         Spacer(modifier = Modifier.width(4.dp))
                         IconButton(
                             onClick = {
-                                clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(message.text))
+                                clipboardManager.setText(AnnotatedString(message.text))
                             },
                             modifier = Modifier.size(32.dp)
                         ) {
@@ -776,6 +991,86 @@ fun MessageBubble(
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun IntentActionCard(
+    action: ExtractedAction,
+    onExecute: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = when (action.type) {
+                        ActionType.CALENDAR_EVENT -> Icons.Rounded.CalendarToday
+                        ActionType.SEND_SMS -> Icons.Rounded.Sms
+                        ActionType.MAKE_CALL -> Icons.Rounded.Call
+                        ActionType.PUSH_NOTIFICATION -> Icons.Rounded.Notifications
+                        ActionType.LOG_NOTE -> Icons.Rounded.NoteAlt
+                        ActionType.OPEN_APP -> Icons.Rounded.Apps
+                        ActionType.SET_ALARM -> Icons.Rounded.Alarm
+                        ActionType.SET_TIMER -> Icons.Rounded.Timer
+                        ActionType.TOGGLE_FLASHLIGHT -> Icons.Rounded.FlashlightOn
+                        ActionType.SET_AUDIO_MODE -> Icons.AutoMirrored.Rounded.VolumeUp
+                        ActionType.LAUNCHER_LAYOUT -> Icons.Rounded.Dashboard
+                        ActionType.OPEN_SETTINGS -> Icons.Rounded.Settings
+                        ActionType.TOGGLE_BLUETOOTH -> Icons.Rounded.Bluetooth
+                        ActionType.TOGGLE_WIFI -> Icons.Rounded.Wifi
+                    },
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = action.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+            Text(
+                text = action.details,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+            )
+
+            if (action.isExecuted) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        tint = Color(0xFF10B981),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Executed on Device",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF10B981)
+                    )
+                }
+            } else {
+                Button(
+                    onClick = onExecute,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(vertical = 4.dp, horizontal = 12.dp)
+                ) {
+                    Icon(imageVector = Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Execute Action", style = MaterialTheme.typography.labelMedium)
                 }
             }
         }

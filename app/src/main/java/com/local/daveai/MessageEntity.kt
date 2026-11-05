@@ -1,9 +1,8 @@
 package com.local.daveai
 
-import android.net.Uri
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import kotlinx.serialization.encodeToString
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 @Entity(tableName = "messages")
@@ -14,18 +13,27 @@ data class MessageEntity(
     val isUser: Boolean,
     val timestamp: Long,
     val persona: String,
-    val attachmentUri: String? = null,
-    val attachmentType: String? = null
+    val extractedActionJson: String? = null,
+    val generationTimeMs: Long? = null,
+    val webSourcesJson: String? = null
 ) {
     fun toChatMessage(): ChatMessage {
-        val resolvedAttachments = if (!attachmentUri.isNullOrBlank() && attachmentUri.startsWith("[")) {
+        val action = if (!extractedActionJson.isNullOrBlank()) {
             try {
-                Json.decodeFromString<List<AttachmentItem>>(attachmentUri)
+                Json.decodeFromString<ExtractedAction>(extractedActionJson)
+            } catch (_: Exception) {
+                null
+            }
+        } else {
+            null
+        }
+
+        val sources = if (!webSourcesJson.isNullOrBlank()) {
+            try {
+                Json.decodeFromString<List<WebSource>>(webSourcesJson)
             } catch (_: Exception) {
                 emptyList()
             }
-        } else if (!attachmentUri.isNullOrBlank()) {
-            listOf(AttachmentItem(attachmentUri, attachmentType?.let { AttachmentType.valueOf(it) } ?: AttachmentType.FILE, Uri.parse(attachmentUri).lastPathSegment ?: "File"))
         } else {
             emptyList()
         }
@@ -35,27 +43,31 @@ data class MessageEntity(
             text = text,
             isUser = isUser,
             timestamp = timestamp,
-            attachments = resolvedAttachments,
-            attachmentUri = attachmentUri,
-            attachmentType = attachmentType?.let { AttachmentType.valueOf(it) }
+            extractedAction = action,
+            generationTimeMs = generationTimeMs,
+            webSources = sources
         )
     }
 
     companion object {
         fun fromChatMessage(message: ChatMessage, persona: String): MessageEntity {
-            val atts = message.getResolvedAttachments()
-            val storedUri = when {
-                atts.size == 1 -> atts[0].uri
-                atts.size > 1 -> {
-                    try {
-                        Json.encodeToString(atts)
-                    } catch (_: Exception) {
-                        message.attachmentUri
-                    }
+            val actionJson = message.extractedAction?.let {
+                try {
+                    Json.encodeToString(ExtractedAction.serializer(), it)
+                } catch (_: Exception) {
+                    null
                 }
-                else -> message.attachmentUri
             }
-            val storedType = atts.firstOrNull()?.type?.name ?: message.attachmentType?.name
+
+            val sourcesJson = if (message.webSources.isNotEmpty()) {
+                try {
+                    Json.encodeToString(ListSerializer(WebSource.serializer()), message.webSources)
+                } catch (_: Exception) {
+                    null
+                }
+            } else {
+                null
+            }
 
             return MessageEntity(
                 id = message.id,
@@ -63,8 +75,9 @@ data class MessageEntity(
                 isUser = message.isUser,
                 timestamp = message.timestamp,
                 persona = persona,
-                attachmentUri = storedUri,
-                attachmentType = storedType
+                extractedActionJson = actionJson,
+                generationTimeMs = message.generationTimeMs,
+                webSourcesJson = sourcesJson
             )
         }
     }

@@ -1,7 +1,9 @@
 package com.local.daveai
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.speech.tts.TextToSpeech
 import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -11,8 +13,9 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
 
-class OpenAiTtsManager(private val context: Context) {
+class OpenAiTtsManager(private val context: Context) : TextToSpeech.OnInitListener {
 
     companion object {
         private const val TAG = "OpenAiTtsManager"
@@ -24,21 +27,58 @@ class OpenAiTtsManager(private val context: Context) {
     @Volatile
     private var isPlaying = false
 
+    private val audioAttributes: AudioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
+
+    private var fallbackTts: TextToSpeech? = TextToSpeech(context.applicationContext, this)
+    @Volatile
+    private var isFallbackInitialized = false
+
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            val result = fallbackTts?.setLanguage(Locale.UK)
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                fallbackTts?.setLanguage(Locale.US)
+            }
+            fallbackTts?.setAudioAttributes(audioAttributes)
+            isFallbackInitialized = true
+        } else {
+            Log.e(TAG, "Initialization of fallback TextToSpeech failed")
+        }
+    }
+
     suspend fun speak(text: String, voice: String = "alloy"): Boolean = withContext(Dispatchers.IO) {
         if (text.isBlank()) return@withContext false
         stop()
         isPlaying = true
 
         val chunks = splitTextIntoChunks(text, maxChunkSize = 800)
+        var openAiSuccess = false
+
         for (chunk in chunks) {
             if (!isPlaying) break
-            val audioFile = fetchTtsAudio(chunk, voice) ?: continue
-            if (!isPlaying) {
-                try { audioFile.delete() } catch (_: Exception) {}
+            val audioFile = fetchTtsAudio(chunk, voice)
+            if (audioFile != null) {
+                openAiSuccess = true
+                if (!isPlaying) {
+                    try { audioFile.delete() } catch (_: Exception) {}
+                    break
+                }
+                playAudioFileSynchronously(audioFile)
+            } else {
                 break
             }
-            playAudioFileSynchronously(audioFile)
         }
+
+        // Fallback to native TextToSpeech if OpenAI TTS API is unreachable or fails
+        if (!openAiSuccess && isPlaying && isFallbackInitialized) {
+            withContext(Dispatchers.Main) {
+                fallbackTts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "DaveSpeech_${System.currentTimeMillis()}")
+            }
+        }
+
         isPlaying = false
         true
     }
@@ -93,8 +133,8 @@ class OpenAiTtsManager(private val context: Context) {
                 setRequestProperty("Authorization", "Bearer $API_KEY")
                 setRequestProperty("Content-Type", "application/json")
                 doOutput = true
-                connectTimeout = 30000
-                readTimeout = 60000
+                connectTimeout = 15000
+                readTimeout = 30000
             }
 
             val jsonBody = JSONObject().apply {
@@ -131,6 +171,7 @@ class OpenAiTtsManager(private val context: Context) {
         try {
             mediaPlayer?.release()
             mediaPlayer = MediaPlayer().apply {
+                setAudioAttributes(audioAttributes)
                 setDataSource(file.absolutePath)
                 prepare()
                 start()
@@ -162,8 +203,19 @@ class OpenAiTtsManager(private val context: Context) {
             mediaPlayer?.stop()
             mediaPlayer?.release()
             mediaPlayer = null
+            fallbackTts?.stop()
         } catch (e: Exception) {
-            Log.e(TAG, "Error stopping media player", e)
+            Log.e(TAG, "Error stopping speech player", e)
+        }
+    }
+
+    fun shutdown() {
+        stop()
+        try {
+            fallbackTts?.shutdown()
+            fallbackTts = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error shutting down fallback TextToSpeech", e)
         }
     }
 }

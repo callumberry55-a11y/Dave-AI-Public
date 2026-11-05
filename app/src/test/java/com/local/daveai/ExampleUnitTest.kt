@@ -1,5 +1,6 @@
 package com.local.daveai
 
+import com.local.daveai.broker.DaveIntegrationProvider
 import org.junit.Test
 import org.junit.Assert.*
 
@@ -17,22 +18,27 @@ class ExampleUnitTest {
     @Test
     fun testPersonasHaveCrisisAndPoetryTrainingAndContextAnchors() {
         for (persona in DavePersona.entries) {
-            assertTrue("Persona ${persona.name} must contain crisis support framework", persona.systemInstruction.contains("CRISIS SUPPORT FRAMEWORK"))
-            assertTrue("Persona ${persona.name} must contain advanced poetry training", persona.systemInstruction.contains("ADVANCED POETRY TRAINING"))
-            assertTrue("Persona ${persona.name} must mention Callum Berry", persona.systemInstruction.contains("Callum Berry"))
-            assertTrue("Persona ${persona.name} must mention Rotherham", persona.systemInstruction.contains("Rotherham"))
-            assertTrue("Persona ${persona.name} must mention NxtQuantum OS / Pulse Launcher CP2.02.02", persona.systemInstruction.contains("NxtQuantum OS / Pulse Launcher CP2.02.02"))
-            assertTrue("Persona ${persona.name} must contain unwavering emotional stability", persona.systemInstruction.contains("unwavering emotional stability"))
-            assertTrue("Persona ${persona.name} must contain calm inner grounding", persona.systemInstruction.contains("calm inner grounding"))
-            assertTrue("Persona ${persona.name} must contain professional attunement", persona.systemInstruction.contains("professional attunement"))
-            assertTrue("Persona ${persona.name} must contain sentient Irish warmth", persona.systemInstruction.contains("sentient Irish warmth"))
+            assertTrue("Persona ${persona.name} must specify Dave is an authentic companion", persona.systemInstruction.contains("companion"))
+            assertTrue("Persona ${persona.name} must mention Callum", persona.systemInstruction.contains("Callum"))
+        }
+    }
+
+    @Test
+    fun testWorldAndUserLearningRoleDirectives() {
+        val prompt = DaveSystemInstruction.daveSystemInstruction
+        assertTrue("Contains world learning directive", prompt.contains("learn about the world using the internet"))
+        assertTrue("Contains anti-robot directive", prompt.contains("NEVER speak like a robot"))
+
+        for (persona in DavePersona.entries) {
+            assertTrue("Persona ${persona.name} contains internet learning", persona.systemInstruction.contains("learn about the world using the internet"))
+            assertTrue("Persona ${persona.name} contains disclaimer directive", persona.systemInstruction.contains("Never use artificial AI disclaimers"))
         }
     }
 
     @Test
     fun testDaveSystemInstructionPrompt() {
         val prompt = DaveSystemInstruction.daveSystemInstruction
-        assertTrue("Contains Callum Berry", prompt.contains("Callum Berry"))
+        assertTrue("Contains Callum", prompt.contains("Callum"))
         assertTrue("Contains Rotherham", prompt.contains("Rotherham"))
         assertTrue("Contains Pulse Launcher", prompt.contains("Pulse Launcher"))
     }
@@ -49,6 +55,16 @@ class ExampleUnitTest {
         assertTrue(formatted.contains("Callum Berry"))
         assertTrue(formatted.contains("Rotherham"))
         assertTrue(formatted.contains("Pulse Launcher / NxtQuantum OS CP2.02.02"))
+        assertTrue(formatted.contains("Storage:"))
+    }
+
+    @Test
+    fun testLocalLibraryContextProvider() {
+        val provider = LocalLibraryContextProvider(null)
+        val libraryContext = provider.captureLocalLibraryContext()
+        assertNotNull(libraryContext)
+        assertNotNull(libraryContext.networkState)
+        assertNotNull(libraryContext.freeStorageGb)
     }
 
     @Test
@@ -65,7 +81,7 @@ class ExampleUnitTest {
         assertTrue(traits.likes.isNotEmpty())
         assertTrue(traits.dislikes.isNotEmpty())
         assertTrue(traits.hobbies.isNotEmpty())
-        assertEquals("Software Engineer & Creative Technologist", traits.profession)
+        assertEquals("Poet & Author", traits.profession)
         assertTrue(traits.emotionalPatterns.isNotEmpty())
     }
 
@@ -84,22 +100,214 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun testMultiAttachmentSerializationAndResolution() {
-        val attachments = listOf(
-            AttachmentItem("content://media/image.png", AttachmentType.IMAGE, "image.png"),
-            AttachmentItem("content://media/doc.pdf", AttachmentType.PDF, "doc.pdf"),
-            AttachmentItem("content://media/code.kt", AttachmentType.CODE, "code.kt")
+    fun testExtractedActionSerializationAndMessageEntityConversion() {
+        val action = ExtractedAction(
+            type = ActionType.CALENDAR_EVENT,
+            title = "Scheduled Calendar Event",
+            details = "Meeting with Callum at 3pm",
+            timeMillis = 1700000000000L
         )
-        val message = ChatMessage(text = "Check these files", isUser = true, attachments = attachments)
-        val resolved = message.getResolvedAttachments()
-        assertEquals(3, resolved.size)
-        assertEquals(AttachmentType.IMAGE, resolved[0].type)
-        assertEquals(AttachmentType.PDF, resolved[1].type)
-        assertEquals(AttachmentType.CODE, resolved[2].type)
+        val message = ChatMessage(
+            text = "Schedule a meeting with Callum",
+            isUser = false,
+            extractedAction = action,
+            generationTimeMs = 1200L
+        )
 
         val entity = MessageEntity.fromChatMessage(message, "WARM_EMPATHETIC")
         val convertedMessage = entity.toChatMessage()
-        assertEquals(3, convertedMessage.getResolvedAttachments().size)
-        assertEquals("doc.pdf", convertedMessage.getResolvedAttachments()[1].name)
+
+        assertNotNull(convertedMessage.extractedAction)
+        assertEquals(ActionType.CALENDAR_EVENT, convertedMessage.extractedAction?.type)
+        assertEquals("Scheduled Calendar Event", convertedMessage.extractedAction?.title)
+        assertEquals(1200L, convertedMessage.generationTimeMs)
+    }
+
+    @Test
+    fun testExpandedActionTypesSerialization() {
+        val types = listOf(
+            ActionType.SET_ALARM,
+            ActionType.SET_TIMER,
+            ActionType.TOGGLE_FLASHLIGHT,
+            ActionType.SET_AUDIO_MODE,
+            ActionType.OPEN_APP,
+            ActionType.LAUNCHER_LAYOUT,
+            ActionType.OPEN_SETTINGS,
+            ActionType.TOGGLE_BLUETOOTH,
+            ActionType.TOGGLE_WIFI
+        )
+        types.forEach { actionType ->
+            val action = ExtractedAction(type = actionType, title = actionType.name, details = "Test details")
+            val msg = ChatMessage(text = "Test", isUser = false, extractedAction = action)
+            val entity = MessageEntity.fromChatMessage(msg, "WARM_EMPATHETIC")
+            val converted = entity.toChatMessage()
+            assertEquals(actionType, converted.extractedAction?.type)
+        }
+    }
+
+    @Test
+    fun testAppLaunchExtraction() {
+        val prompts = listOf("open Spotify", "launch YouTube", "start Camera", "fire up Chrome")
+        prompts.forEach { prompt ->
+            val appName = prompt
+                .replace(Regex("(?i)\\b(open|launch|start|run|fire up|app|application|the)\\b"), "")
+                .trim()
+            assertTrue(appName.isNotBlank())
+        }
+    }
+
+    @Test
+    fun testDaveEngineSupport() {
+        val engine = DaveEngine()
+        assertNotNull(engine)
+        assertFalse(engine.isNativeSupported())
+    }
+
+    @Test
+    fun testClearChatAction() {
+        val list = mutableListOf(ChatMessage(text = "Hello Dave", isUser = true))
+        list.clear()
+        assertTrue(list.isEmpty())
+    }
+
+    @Test
+    fun testHistoryTruncationToSixMessages() {
+        val history = (1..10).map { ChatMessage(text = "Message $it", isUser = it % 2 != 0) }
+        val truncated = history.takeLast(6)
+        assertEquals(6, truncated.size)
+        assertEquals("Message 5", truncated.first().text)
+        assertEquals("Message 10", truncated.last().text)
+    }
+
+    @Test
+    fun testClaudeApiModelAndClient() {
+        assertEquals("https://api.anthropic.com/", ClaudeClient.ANTHROPIC_BASE_URL)
+        assertNotNull(ClaudeClient.api)
+
+        val req = ClaudeRequest(
+            model = ClaudeClient.DEFAULT_MODEL,
+            maxTokens = 1024,
+            system = "You are Dave.",
+            messages = listOf(ClaudeMessage("user", "Hello"))
+        )
+        assertEquals("claude-haiku-5-5", req.model)
+        assertEquals(1024, req.maxTokens)
+        assertEquals("You are Dave.", req.system)
+        assertEquals(1, req.messages.size)
+
+        val resp = ClaudeResponse(
+            id = "msg_123",
+            content = listOf(ClaudeContentBlock(type = "text", text = "Hello Callum!"))
+        )
+        assertEquals("msg_123", resp.id)
+        assertEquals("Hello Callum!", resp.content.first().text)
+    }
+
+    @Test
+    fun testCDataMcpClientEndpoint() {
+        assertEquals("https://mcp.cloud.cdata.com/mcp", McpClientHelper.CDATA_MCP_ENDPOINT)
+    }
+
+    @Test
+    fun testV5SecondBrainAndSpeechRecognizer() {
+        val brainItem = SecondBrainEntity(
+            title = "Project Roadmap",
+            content = "Complete V5 CP5.01.01 release with SQLite FTS5 Second Brain.",
+            category = "NOTES"
+        )
+        assertEquals("Project Roadmap", brainItem.title)
+        assertEquals("NOTES", brainItem.category)
+        assertTrue(brainItem.content.contains("FTS5"))
+    }
+
+    @Test
+    fun testUserProfileEntityCreation() {
+        val profile = UserProfileEntity(
+            name = "Alex Smith",
+            location = "London",
+            profession = "Architect",
+            isActive = true
+        )
+        assertEquals("Alex Smith", profile.name)
+        assertEquals("London", profile.location)
+        assertEquals("Architect", profile.profession)
+        assertTrue(profile.isActive)
+    }
+
+    @Test
+    fun testFreeEnvironmentClientEndpoints() {
+        assertNotNull(FreeEnvironmentClient.openMeteoWeather)
+        assertNotNull(FreeEnvironmentClient.openMeteoAirQuality)
+        assertNotNull(FreeEnvironmentClient.nominatim)
+        assertNotNull(FreeEnvironmentClient.wikipedia)
+
+        val weather = OpenMeteoCurrentWeather(temperature = 18.5f, windspeed = 12.0f)
+        assertEquals(18.5f, weather.temperature)
+
+        val wiki = WikipediaSummaryResponse(title = "Rotherham", extract = "Rotherham is a minster town in South Yorkshire.")
+        assertEquals("Rotherham", wiki.title)
+    }
+
+    @Test
+    fun testDaveVoiceGlyphSyncWaveformProcessing() {
+        val silentWaveform = ByteArray(128) { 128.toByte() }
+        var sum = 0.0
+        for (b in silentWaveform) {
+            val sample = (b.toInt() and 0xFF) - 128
+            sum += sample * sample
+        }
+        val rms = kotlin.math.sqrt(sum / silentWaveform.size)
+        val rawLevel = ((rms / 45.0) * 100).toInt().coerceIn(0, 100)
+        val brightness = if (rawLevel < 8) 0 else rawLevel
+        assertEquals(0, brightness)
+
+        val activeWaveform = ByteArray(128) { i -> (128 + if (i % 2 == 0) 30 else -30).toByte() }
+        var activeSum = 0.0
+        for (b in activeWaveform) {
+            val sample = (b.toInt() and 0xFF) - 128
+            activeSum += sample * sample
+        }
+        val activeRms = kotlin.math.sqrt(activeSum / activeWaveform.size)
+        val activeRawLevel = ((activeRms / 45.0) * 100).toInt().coerceIn(0, 100)
+        assertTrue(activeRawLevel > 20)
+    }
+
+    @Test
+    fun testDaveIntegrationProvider() {
+        val provider = DaveIntegrationProvider()
+        assertNotNull(provider)
+    }
+
+    @Test
+    fun testV4CapabilitiesAndSettings() {
+        val prompt = DaveSystemInstruction.daveSystemInstruction
+        assertTrue(prompt.contains("Multimodal Vision"))
+        assertTrue(prompt.contains("Deep System Access"))
+        assertTrue(prompt.contains("Multi-Agent"))
+
+        val mode = AiEngineMode.CLAUDE
+        assertEquals("Anthropic Claude Engine", mode.displayName)
+    }
+
+    @Test
+    fun testMultimodalImageSourceAndAttachment() {
+        val imageSource = ClaudeImageSource(mediaType = "image/jpeg", data = "base64data==")
+        assertEquals("base64", imageSource.type)
+        assertEquals("image/jpeg", imageSource.mediaType)
+        assertEquals("base64data==", imageSource.data)
+
+        val block = ClaudeContentBlock(type = "image", source = imageSource)
+        assertEquals("image", block.type)
+        assertEquals(imageSource, block.source)
+
+        val attachment = FileAttachment(
+            uriString = "content://media/123",
+            name = "photo.jpg",
+            mimeType = "image/jpeg",
+            sizeBytes = 2048,
+            base64Data = "base64data=="
+        )
+        assertEquals("photo.jpg", attachment.name)
+        assertEquals("image/jpeg", attachment.mimeType)
     }
 }

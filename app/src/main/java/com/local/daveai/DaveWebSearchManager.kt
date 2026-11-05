@@ -5,36 +5,77 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
+import java.net.URLDecoder
 import java.net.URLEncoder
+
+data class WebSearchResult(
+    val formattedText: String,
+    val sources: List<WebSource>
+)
 
 class DaveWebSearchManager {
 
     companion object {
         private const val TAG = "DaveWebSearchManager"
+        private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
-    suspend fun search(query: String): String = withContext(Dispatchers.IO) {
-        if (query.isBlank()) return@withContext ""
+    suspend fun searchWithSources(query: String): WebSearchResult = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext WebSearchResult("", emptyList())
         try {
             val encodedQuery = URLEncoder.encode(query, "UTF-8")
+
+            // 1. Try DuckDuckGo Instant Answer API with structured [Retrieved Web Data] schema
+            val apiResult = searchApi(encodedQuery)
+            if (apiResult.first.isNotBlank()) {
+                return@withContext WebSearchResult("[Retrieved Web Data]\n${apiResult.first}", apiResult.second)
+            }
+
+            // 2. Fallback to HTML Search Snippet Extraction
+            val htmlResult = searchHtmlFallback(encodedQuery)
+            if (htmlResult.first.isNotBlank()) {
+                return@withContext WebSearchResult("[Retrieved Web Data]\n${htmlResult.first}", htmlResult.second)
+            }
+
+            WebSearchResult("No direct web search summary found for \"$query\".", emptyList())
+        } catch (e: Exception) {
+            Log.e(TAG, "Error performing web search", e)
+            WebSearchResult("Error performing web search: ${e.localizedMessage}", emptyList())
+        }
+    }
+
+    suspend fun search(query: String): String {
+        return searchWithSources(query).formattedText
+    }
+
+    private fun searchApi(encodedQuery: String): Pair<String, List<WebSource>> {
+        return try {
             val urlString = "https://api.duckduckgo.com/?q=$encodedQuery&format=json&no_html=1&skip_disambig=1"
-            val url = URL(urlString)
-            val connection = (url.openConnection() as HttpURLConnection).apply {
+            val connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 10000
-                readTimeout = 10000
+                setRequestProperty("User-Agent", USER_AGENT)
+                connectTimeout = 8000
+                readTimeout = 8000
             }
 
             if (connection.responseCode == HttpURLConnection.HTTP_OK) {
                 val responseString = connection.inputStream.bufferedReader().use { it.readText() }
                 val json = JSONObject(responseString)
                 val abstractText = json.optString("AbstractText", "")
-                val heading = json.optString("Heading", "")
+                val abstractUrl = json.optString("AbstractURL", "")
 
                 val resultsBuilder = StringBuilder()
+                val sourcesList = mutableListOf<WebSource>()
+                var sourceIndex = 1
+
                 if (abstractText.isNotBlank()) {
-                    resultsBuilder.append("Heading: $heading\nSummary: $abstractText\n")
+                    val link = if (abstractUrl.isNotBlank()) abstractUrl else "https://duckduckgo.com/?q=$encodedQuery"
+                    val title = extractDomainTitle(link)
+                    resultsBuilder.append("Source $sourceIndex:\nURL: $link\nSnippet: $abstractText\n\n")
+                    sourcesList.add(WebSource(title, link))
+                    sourceIndex++
                 }
 
                 val relatedTopics = json.optJSONArray("RelatedTopics")
@@ -42,24 +83,114 @@ class DaveWebSearchManager {
                     for (i in 0 until minOf(relatedTopics.length(), 3)) {
                         val topic = relatedTopics.optJSONObject(i)
                         val text = topic?.optString("Text", "")
+                        val firstUrl = topic?.optString("FirstURL", "")
                         if (!text.isNullOrBlank()) {
-                            resultsBuilder.append("- $text\n")
+                            val link = if (!firstUrl.isNullOrBlank()) firstUrl else "https://duckduckgo.com/?q=$encodedQuery"
+                            val title = extractDomainTitle(link)
+                            resultsBuilder.append("Source $sourceIndex:\nURL: $link\nSnippet: $text\n\n")
+                            if (sourcesList.none { it.url == link }) {
+                                sourcesList.add(WebSource(title, link))
+                            }
+                            sourceIndex++
                         }
                     }
                 }
 
-                val result = resultsBuilder.toString().trim()
-                if (result.isNotBlank()) {
-                    "Web Search Results for \"$query\":\n$result"
-                } else {
-                    "No direct web search summary found for \"$query\"."
-                }
+                Pair(resultsBuilder.toString().trim(), sourcesList)
             } else {
-                "Web search request failed with response code ${connection.responseCode}"
+                Pair("", emptyList())
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error performing web search", e)
-            "Error performing web search: ${e.localizedMessage}"
+            Log.d(TAG, "API search failed: ${e.message}")
+            Pair("", emptyList())
+        }
+    }
+
+    private fun searchHtmlFallback(encodedQuery: String): Pair<String, List<WebSource>> {
+        return try {
+            val urlString = "https://html.duckduckgo.com/html/?q=$encodedQuery"
+            val connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", USER_AGENT)
+                connectTimeout = 8000
+                readTimeout = 8000
+            }
+
+            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                val html = connection.inputStream.bufferedReader().use { it.readText() }
+                val resultsBuilder = StringBuilder()
+                val sourcesList = mutableListOf<WebSource>()
+
+                val resultRegex = Regex("<a\\s+class=\"result__url\"\\s+href=\"([^\"]+)\"[^>]*>(.*?)</a>.*?<a\\s+class=\"result__snippet\"[^>]*>(.*?)</a>", RegexOption.DOT_MATCHES_ALL)
+                var sourceIndex = 1
+                val matches = resultRegex.findAll(html)
+                for (match in matches) {
+                    if (sourceIndex > 3) break
+                    val rawUrl = match.groupValues[1].trim()
+                    val url = cleanDuckUrl(rawUrl)
+                    val rawSnippet = match.groupValues[3]
+                    val cleanSnippet = rawSnippet.replace(Regex("<[^>]*>"), "").replace("&quot;", "\"").replace("&amp;", "&").trim()
+
+                    if (url.isNotBlank() && cleanSnippet.isNotBlank()) {
+                        val title = extractDomainTitle(url)
+                        resultsBuilder.append("Source $sourceIndex:\nURL: $url\nSnippet: $cleanSnippet\n\n")
+                        if (sourcesList.none { it.url == url }) {
+                            sourcesList.add(WebSource(title, url))
+                        }
+                        sourceIndex++
+                    }
+                }
+
+                if (resultsBuilder.isEmpty()) {
+                    val snippetRegex = Regex("<a\\s+class=\"result__snippet\"[^>]*>(.*?)</a>", RegexOption.DOT_MATCHES_ALL)
+                    val snippetMatches = snippetRegex.findAll(html)
+                    for (match in snippetMatches.take(3)) {
+                        val cleanSnippet = match.groupValues[1].replace(Regex("<[^>]*>"), "").replace("&quot;", "\"").replace("&amp;", "&").trim()
+                        if (cleanSnippet.isNotBlank()) {
+                            val fallbackUrl = "https://duckduckgo.com/?q=$encodedQuery"
+                            resultsBuilder.append("Source $sourceIndex:\nURL: $fallbackUrl\nSnippet: $cleanSnippet\n\n")
+                            if (sourcesList.none { it.url == fallbackUrl }) {
+                                sourcesList.add(WebSource("duckduckgo.com", fallbackUrl))
+                            }
+                            sourceIndex++
+                        }
+                    }
+                }
+
+                Pair(resultsBuilder.toString().trim(), sourcesList)
+            } else {
+                Pair("", emptyList())
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "HTML fallback search failed: ${e.message}")
+            Pair("", emptyList())
+        }
+    }
+
+    private fun cleanDuckUrl(rawUrl: String): String {
+        return try {
+            if (rawUrl.contains("uddg=")) {
+                val extracted = rawUrl.substringAfter("uddg=").substringBefore("&")
+                URLDecoder.decode(extracted, "UTF-8")
+            } else if (rawUrl.startsWith("//")) {
+                "https:$rawUrl"
+            } else if (rawUrl.startsWith("http")) {
+                rawUrl
+            } else {
+                "https://" + rawUrl.trimStart('/')
+            }
+        } catch (_: Exception) {
+            rawUrl
+        }
+    }
+
+    private fun extractDomainTitle(url: String): String {
+        return try {
+            val uri = URI(url)
+            val host = uri.host ?: url
+            host.removePrefix("www.").removePrefix("m.")
+        } catch (_: Exception) {
+            url.take(25)
         }
     }
 }

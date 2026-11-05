@@ -1,20 +1,40 @@
 package com.local.daveai
 
-import android.net.Uri
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import java.util.UUID
 
 @Serializable
-enum class AttachmentType {
-    IMAGE, VIDEO, PDF, CODE, DOCUMENT, FILE
+enum class ActionType {
+    CALENDAR_EVENT,
+    SEND_SMS,
+    MAKE_CALL,
+    PUSH_NOTIFICATION,
+    LOG_NOTE,
+    OPEN_APP,
+    SET_ALARM,
+    SET_TIMER,
+    TOGGLE_FLASHLIGHT,
+    SET_AUDIO_MODE,
+    LAUNCHER_LAYOUT,
+    OPEN_SETTINGS,
+    TOGGLE_BLUETOOTH,
+    TOGGLE_WIFI
 }
 
 @Serializable
-data class AttachmentItem(
-    val uri: String,
-    val type: AttachmentType,
-    val name: String
+data class ExtractedAction(
+    val type: ActionType,
+    val title: String,
+    val details: String,
+    val target: String? = null,
+    val timeMillis: Long? = null,
+    val isExecuted: Boolean = false
+)
+
+@Serializable
+data class WebSource(
+    val title: String,
+    val url: String
 )
 
 data class ChatMessage(
@@ -22,21 +42,8 @@ data class ChatMessage(
     val text: String,
     val isUser: Boolean,
     val timestamp: Long = System.currentTimeMillis(),
-    val attachments: List<AttachmentItem> = emptyList(),
-    val attachmentUri: String? = null,
-    val attachmentType: AttachmentType? = null
-) {
-    fun getResolvedAttachments(): List<AttachmentItem> {
-        if (attachments.isNotEmpty()) return attachments
-        if (attachmentUri.isNullOrBlank()) return emptyList()
-        return if (attachmentUri.startsWith("[")) {
-            try {
-                Json.decodeFromString<List<AttachmentItem>>(attachmentUri)
-            } catch (_: Exception) {
-                emptyList()
-            }
-        } else {
-            listOf(AttachmentItem(attachmentUri, attachmentType ?: AttachmentType.FILE, Uri.parse(attachmentUri).lastPathSegment ?: "File"))
-        }
-    }
-}
+    val extractedAction: ExtractedAction? = null,
+    val generationTimeMs: Long? = null,
+    val webSources: List<WebSource> = emptyList(),
+    val attachments: List<FileAttachment> = emptyList()
+)
