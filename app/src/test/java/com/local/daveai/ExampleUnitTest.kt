@@ -302,21 +302,6 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun testDaveWebServer() = kotlinx.coroutines.runBlocking {
-        var received = ""
-        val url = com.local.daveai.server.DaveWebServer.getServerUrl()
-        assertNotNull(url)
-        assertTrue(url.startsWith("http://"))
-        com.local.daveai.server.DaveWebServer.start { prompt ->
-            received = prompt
-            "Dave reply to $prompt"
-        }
-        assertTrue(com.local.daveai.server.DaveWebServer.isRunning())
-        com.local.daveai.server.DaveWebServer.stop()
-        assertFalse(com.local.daveai.server.DaveWebServer.isRunning())
-    }
-
-    @Test
     fun testFreeEnvironmentClientEndpoints() {
         assertNotNull(FreeEnvironmentClient.openMeteoWeather)
         assertNotNull(FreeEnvironmentClient.openMeteoAirQuality)

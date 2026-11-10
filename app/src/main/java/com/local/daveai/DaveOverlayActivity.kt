@@ -139,12 +139,7 @@ class DaveOverlayActivity : ComponentActivity() {
                                 HorizontalDivider(
                                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                                 )
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                val serverUrl = remember { com.local.daveai.server.DaveWebServer.getServerUrl() }
-                                com.local.daveai.ui.common.DaveWebLinkBar(serverUrl = serverUrl)
-
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
 
                                 LazyColumn(
                                     state = listState,
