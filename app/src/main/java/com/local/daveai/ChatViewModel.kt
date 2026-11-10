@@ -479,7 +479,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val searchKeywords = listOf(
             "search", "google", "find online", "latest news", "news about",
             "weather", "web search", "look up", "what is the current", "who is the current",
-            "today's news", "price of", "stock price"
+            "today's news", "price of", "stock price", "who is", "what is", "where is",
+            "tell me about", "latest", "current", "browse", "info on", "info about", "lookup"
         )
         return searchKeywords.any { lower.contains(it) }
     }
@@ -639,7 +640,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     isUser = false,
                     extractedAction = detectedAction,
                     generationTimeMs = latencyMs,
-                    webSources = retrievedSources
+                    webSources = retrievedSources.distinctBy { it.url }
                 )
 
                 _messages.update { list ->

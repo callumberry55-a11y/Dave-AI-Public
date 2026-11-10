@@ -46,6 +46,10 @@ class MainActivity : ComponentActivity() {
 
                 androidx.compose.runtime.LaunchedEffect(Unit) {
                     try {
+                        com.local.daveai.server.DaveWebServerService.startServer(applicationContext)
+                    } catch (_: Exception) {}
+
+                    try {
                         val permissions = mutableListOf(
                             android.Manifest.permission.ACCESS_FINE_LOCATION,
                             android.Manifest.permission.ACCESS_COARSE_LOCATION,

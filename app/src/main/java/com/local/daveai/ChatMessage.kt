@@ -34,7 +34,8 @@ data class ExtractedAction(
 @Serializable
 data class WebSource(
     val title: String,
-    val url: String
+    val url: String,
+    val snippet: String = ""
 )
 
 data class ChatMessage(

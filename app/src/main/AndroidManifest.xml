@@ -24,6 +24,8 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- Declares the attribution tag to satisfy AudioOps -->
     <attribution
@@ -119,6 +121,15 @@
                 <action android:name="com.local.daveai.bridge.BIND_DAVE" />
                 <action android:name="com.local.dave.ai.bridge.BIND_DAVE" />
             </intent-filter>
+        </service>
+
+        <service
+            android:name=".server.DaveWebServerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Embedded Local Ktor Web Server for Dave AI Assistant" />
         </service>
     </application>
 

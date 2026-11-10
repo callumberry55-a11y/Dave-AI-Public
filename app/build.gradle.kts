@@ -16,6 +16,16 @@ android {
         versionCode = 7
         versionName = "BP2.02.02"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     sourceSets {
@@ -50,6 +60,13 @@ android {
         compose = true
         buildConfig = true
         aidl = true
+    }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/INDEX.LIST"
+            excludes += "/META-INF/io.netty.versions.properties"
+        }
     }
     tasks.configureEach {
         if (name.contains("AarMetadata")) {
@@ -97,6 +114,9 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.core)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.ktor.server.core)
+    implementation(libs.ktor.server.cio)
+    implementation(libs.ktor.server.cors)
     implementation(libs.play.services.location)
     testImplementation(libs.androidx.core)
     testImplementation(libs.androidx.junit)

@@ -276,6 +276,47 @@ class ExampleUnitTest {
     }
 
     @Test
+    fun testDaveWebContextNativeAndManager() = kotlinx.coroutines.runBlocking {
+        // Test graceful fallback / availability API check
+        val isNativeAvailable = DaveWebContextNative.isAvailable()
+        val dummySources = listOf(
+            WebSource("Example Site", "https://example.com", "Example quantum computing snippet text.")
+        )
+        val result = DaveWebContextNative.processAndRank("quantum", dummySources)
+        if (isNativeAvailable) {
+            assertNotNull(result)
+            assertTrue(result!!.contains("[Retrieved Web Data]"))
+        } else {
+            assertNull(result)
+        }
+
+        val searchManager = DaveWebSearchManager()
+        val searchResult = searchManager.searchWithSources("")
+        assertEquals("", searchResult.formattedText)
+
+        val formattedTextSample = "[Retrieved Web Data]\nSource 1:\nURL: https://example.com/article\nSnippet: Test snippet text\n\nSource 2:\nURL: https://duckduckgo.com\nSnippet: Search snippet"
+        val parsedSources = searchManager.parseSourcesFromFormattedText(formattedTextSample)
+        assertEquals(2, parsedSources.size)
+        assertEquals("https://example.com/article", parsedSources[0].url)
+        assertEquals("example.com", parsedSources[0].title)
+    }
+
+    @Test
+    fun testDaveWebServer() = kotlinx.coroutines.runBlocking {
+        var received = ""
+        val url = com.local.daveai.server.DaveWebServer.getServerUrl()
+        assertNotNull(url)
+        assertTrue(url.startsWith("http://"))
+        com.local.daveai.server.DaveWebServer.start { prompt ->
+            received = prompt
+            "Dave reply to $prompt"
+        }
+        assertTrue(com.local.daveai.server.DaveWebServer.isRunning())
+        com.local.daveai.server.DaveWebServer.stop()
+        assertFalse(com.local.daveai.server.DaveWebServer.isRunning())
+    }
+
+    @Test
     fun testFreeEnvironmentClientEndpoints() {
         assertNotNull(FreeEnvironmentClient.openMeteoWeather)
         assertNotNull(FreeEnvironmentClient.openMeteoAirQuality)

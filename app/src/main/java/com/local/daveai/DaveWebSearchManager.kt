@@ -24,19 +24,36 @@ class DaveWebSearchManager {
 
     suspend fun searchWithSources(query: String): WebSearchResult = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext WebSearchResult("", emptyList())
+
+        // Check C++ native cache first
+        val cachedText = DaveWebContextNative.getCachedResult(query)
+        if (!cachedText.isNullOrBlank()) {
+            try {
+                Log.d(TAG, "Native C++ Web Context cache hit for query: $query")
+            } catch (_: Throwable) {}
+            val parsedSources = parseSourcesFromFormattedText(cachedText)
+            return@withContext WebSearchResult(cachedText, parsedSources)
+        }
+
         try {
             val encodedQuery = URLEncoder.encode(query, "UTF-8")
 
             // 1. Try DuckDuckGo Instant Answer API with structured [Retrieved Web Data] schema
             val apiResult = searchApi(encodedQuery)
-            if (apiResult.first.isNotBlank()) {
-                return@withContext WebSearchResult("[Retrieved Web Data]\n${apiResult.first}", apiResult.second)
+            if (apiResult.second.isNotEmpty()) {
+                val nativeRanked = DaveWebContextNative.processAndRank(query, apiResult.second)
+                val finalFormatted = nativeRanked ?: "[Retrieved Web Data]\n${apiResult.first}"
+                val finalSources = parseSourcesFromFormattedText(finalFormatted).ifEmpty { apiResult.second }
+                return@withContext WebSearchResult(finalFormatted, finalSources)
             }
 
             // 2. Fallback to HTML Search Snippet Extraction
             val htmlResult = searchHtmlFallback(encodedQuery)
-            if (htmlResult.first.isNotBlank()) {
-                return@withContext WebSearchResult("[Retrieved Web Data]\n${htmlResult.first}", htmlResult.second)
+            if (htmlResult.second.isNotEmpty()) {
+                val nativeRanked = DaveWebContextNative.processAndRank(query, htmlResult.second)
+                val finalFormatted = nativeRanked ?: "[Retrieved Web Data]\n${apiResult.first}"
+                val finalSources = parseSourcesFromFormattedText(finalFormatted).ifEmpty { htmlResult.second }
+                return@withContext WebSearchResult(finalFormatted, finalSources)
             }
 
             WebSearchResult("No direct web search summary found for \"$query\".", emptyList())
@@ -44,6 +61,21 @@ class DaveWebSearchManager {
             Log.e(TAG, "Error performing web search", e)
             WebSearchResult("Error performing web search: ${e.localizedMessage}", emptyList())
         }
+    }
+
+    fun parseSourcesFromFormattedText(text: String): List<WebSource> {
+        if (text.isBlank() || !text.contains("URL:")) return emptyList()
+        val sources = mutableListOf<WebSource>()
+        val urlRegex = Regex("URL:\\s*(https?://\\S+)")
+        val matches = urlRegex.findAll(text)
+        for (match in matches) {
+            val url = match.groupValues[1].trim()
+            if (url.isNotBlank() && sources.none { it.url == url }) {
+                val title = extractDomainTitle(url)
+                sources.add(WebSource(title = title, url = url))
+            }
+        }
+        return sources
     }
 
     suspend fun search(query: String): String {
