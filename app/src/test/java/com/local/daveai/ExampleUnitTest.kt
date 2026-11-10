@@ -302,6 +302,27 @@ class ExampleUnitTest {
     }
 
     @Test
+    fun testDaveLearnerNativeAndCreativeEngine() {
+        val isAvailable = DaveLearnerNative.isAvailable()
+        val candidates = listOf("I love poetry and quantum computing", "Bugs and latency are annoying", "I like to code in Jetpack Compose")
+        val ranked = DaveLearnerNative.rankSemanticMemory("quantum poetry", candidates, 2)
+        assertEquals(2, ranked.size)
+
+        val poemSample = "Shadows fall across the silent night,\nStars shine bright with radiant light.\nMoonlight gleams upon the quiet sea,\nDreaming of a distant eternity."
+        val poetryResult = DaveLearnerNative.analyzePoetry(poemSample)
+        if (isAvailable) {
+            assertNotNull(poetryResult)
+            assertTrue(poetryResult!!.contains("Native Poetry"))
+        }
+
+        val musicResult = DaveLearnerNative.analyzeMusicAndSheet("Compose a sad melancholic melody in minor key")
+        if (isAvailable) {
+            assertNotNull(musicResult)
+            assertTrue(musicResult!!.contains("Sheet Music"))
+        }
+    }
+
+    @Test
     fun testFreeEnvironmentClientEndpoints() {
         assertNotNull(FreeEnvironmentClient.openMeteoWeather)
         assertNotNull(FreeEnvironmentClient.openMeteoAirQuality)

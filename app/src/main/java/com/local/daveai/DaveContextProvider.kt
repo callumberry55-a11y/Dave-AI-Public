@@ -74,14 +74,29 @@ data class DaveRuntimeContext(
                 }
             }
             if (semanticMemories.isNotEmpty()) {
+                val rankedMemories = DaveLearnerNative.rankSemanticMemory(query, semanticMemories, 5)
                 sb.append("\n[Relevant Past Semantic Excerpts]:\n")
-                semanticMemories.forEach { mem ->
+                rankedMemories.forEach { mem ->
                     sb.append("- $mem\n")
+                }
+            }
+
+            if (lowerQuery.isNotBlank()) {
+                if (lowerQuery.contains("poem") || lowerQuery.contains("poetry") || lowerQuery.contains("meter") || lowerQuery.contains("rhyme") || lowerQuery.contains("cadence")) {
+                    DaveLearnerNative.analyzePoetry(query)?.let { analysis ->
+                        sb.append("\n\n$analysis\n")
+                    }
+                }
+                if (lowerQuery.contains("music") || lowerQuery.contains("sheet") || lowerQuery.contains("key") || lowerQuery.contains("scale") || lowerQuery.contains("chord") || lowerQuery.contains("melody")) {
+                    DaveLearnerNative.analyzeMusicAndSheet(query)?.let { musicAnalysis ->
+                        sb.append("\n\n$musicAnalysis\n")
+                    }
                 }
             }
         }
         sb.append("</retrieved_memory>")
-        return sb.toString()
+        val fullPromptContext = sb.toString()
+        return DaveLearnerNative.compressContextPrompt(fullPromptContext)
     }
 }
 
