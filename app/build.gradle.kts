@@ -14,7 +14,7 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = 7
-        versionName = "BP2.01.01"
+        versionName = "BP2.02.02"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

@@ -45,24 +45,33 @@ class MainActivity : ComponentActivity() {
                 ) { /* Permissions Granted Result */ }
 
                 androidx.compose.runtime.LaunchedEffect(Unit) {
-                    val permissions = mutableListOf(
-                        android.Manifest.permission.ACCESS_FINE_LOCATION,
-                        android.Manifest.permission.ACCESS_COARSE_LOCATION,
-                        android.Manifest.permission.RECORD_AUDIO,
-                        android.Manifest.permission.READ_CALENDAR,
-                        android.Manifest.permission.WRITE_CALENDAR,
-                        android.Manifest.permission.READ_CONTACTS,
-                        android.Manifest.permission.SEND_SMS,
-                        android.Manifest.permission.CALL_PHONE,
-                        android.Manifest.permission.CAMERA
-                    )
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                        permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
-                        permissions.add(android.Manifest.permission.READ_MEDIA_IMAGES)
-                        permissions.add(android.Manifest.permission.READ_MEDIA_VIDEO)
-                        permissions.add(android.Manifest.permission.READ_MEDIA_AUDIO)
+                    try {
+                        val permissions = mutableListOf(
+                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                            android.Manifest.permission.RECORD_AUDIO,
+                            android.Manifest.permission.READ_CALENDAR,
+                            android.Manifest.permission.WRITE_CALENDAR,
+                            android.Manifest.permission.READ_CONTACTS,
+                            android.Manifest.permission.SEND_SMS,
+                            android.Manifest.permission.CALL_PHONE,
+                            android.Manifest.permission.CAMERA
+                        )
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                            permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
+                            permissions.add(android.Manifest.permission.READ_MEDIA_IMAGES)
+                            permissions.add(android.Manifest.permission.READ_MEDIA_VIDEO)
+                            permissions.add(android.Manifest.permission.READ_MEDIA_AUDIO)
+                        }
+                        val missing = permissions.filter {
+                            checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                        }
+                        if (missing.isNotEmpty()) {
+                            permissionLauncher.launch(missing.toTypedArray())
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("MainActivity", "Permission launch skipped: ${e.message}")
                     }
-                    permissionLauncher.launch(permissions.toTypedArray())
                 }
 
                 Surface(

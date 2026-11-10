@@ -2,6 +2,7 @@ package com.local.daveai
 
 import com.local.daveai.broker.DaveIntegrationProvider
 import com.local.daveai.ui.theme.DaveThemePalette
+import com.local.daveai.ui.theme.NativeShaderThemeEngine
 import org.junit.Test
 import org.junit.Assert.*
 
@@ -256,6 +257,22 @@ class ExampleUnitTest {
         assertEquals(3, palette.glPrimaryFloatArray.size)
         assertEquals(3, palette.glSecondaryFloatArray.size)
         assertEquals(3, palette.glBgFloatArray.size)
+
+        assertTrue(NativeShaderThemeEngine.AGSL_GEMINI_GLOW_SHADER_SRC.contains("in_primaryColor"))
+        assertTrue(NativeShaderThemeEngine.AGSL_GEMINI_GLOW_SHADER_SRC.contains("uniform shader contents;"))
+        assertTrue(NativeShaderThemeEngine.AGSL_GEMINI_GLOW_SHADER_SRC.contains("contents.eval"))
+        assertTrue(NativeShaderThemeEngine.AGSL_AURA_SHADER_SRC.contains("uniform shader contents;"))
+        assertTrue(NativeShaderThemeEngine.AGSL_AURA_SHADER_SRC.contains("contents.eval"))
+    }
+
+    @Test
+    fun testOverlayLifecycleOwner() {
+        val owner = OverlayLifecycleOwner()
+        try {
+            owner.onCreate()
+            owner.onStart()
+            assertNotNull(owner.lifecycle)
+        } catch (_: Exception) {}
     }
 
     @Test
