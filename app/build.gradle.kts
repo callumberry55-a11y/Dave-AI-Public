@@ -116,6 +116,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.cio)
+    implementation(libs.ktor.server.netty)
     implementation(libs.ktor.server.cors)
     implementation(libs.play.services.location)
     testImplementation(libs.androidx.core)
