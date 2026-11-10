@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.local.daveai.ui.theme.DaveThemePalette
 import java.util.UUID
 
 enum class DavePersona(val displayName: String, val systemInstruction: String, val description: String) {
@@ -62,6 +63,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = null
     )
+
+    private val settingsManager = DaveSettingsManager(application)
+
+    val activePalette: StateFlow<DaveThemePalette> = settingsManager.activePaletteFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = DaveThemePalette.NEON_OBSIDIAN
+    )
+
+    fun setPalette(palette: DaveThemePalette) {
+        viewModelScope.launch { settingsManager.setActiveThemePalette(palette) }
+    }
 
     fun createProfile(name: String, location: String, profession: String, hobbies: String, likes: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -110,7 +123,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val systemActionsManager = DaveSystemActionsManager(application)
     private val ttsManager = OpenAiTtsManager(application)
     private val webSearchManager = DaveWebSearchManager()
-    private val settingsManager = DaveSettingsManager(application)
     private val daveEngine = DaveEngine()
     private val multiAgentOrchestrator = MultiAgentOrchestrator()
 
@@ -276,6 +288,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun executeAction(messageId: String, action: ExtractedAction) {
         viewModelScope.launch {
+            SecurityAuditManager.auditActionIntent(action)
             var success = false
             when (action.type) {
                 ActionType.CALENDAR_EVENT -> {

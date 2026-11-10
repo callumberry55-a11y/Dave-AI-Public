@@ -1,7 +1,6 @@
 package com.local.daveai.ui.theme
 
 import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -11,38 +10,32 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
-private val DarkColorScheme = darkColorScheme(
-    primary = NeonCyan,
-    secondary = ElectricViolet,
-    tertiary = Purple80,
-    background = DeepObsidian,
-    surface = GlassSurfaceColor,
-    onPrimary = Color.Black,
-    onSecondary = Color.White,
-    onBackground = TextPrimary,
-    onSurface = TextPrimary
-)
-
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-)
-
 @Composable
 fun DaveTheme(
+    palette: DaveThemePalette = DaveThemePalette.NEON_OBSIDIAN,
     darkTheme: Boolean = true,
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
+    val darkScheme = darkColorScheme(
+        primary = palette.primary,
+        secondary = palette.secondary,
+        tertiary = Purple80,
+        background = palette.background,
+        surface = palette.surface,
+        onPrimary = Color.Black,
+        onSecondary = Color.White,
+        onBackground = TextPrimary,
+        onSurface = TextPrimary
+    )
+
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+        darkTheme -> darkScheme
+        else -> lightColorScheme(primary = palette.primary, secondary = palette.secondary)
     }
 
     MaterialTheme(

@@ -7,12 +7,15 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.ui.NavDisplay
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.local.daveai.ui.theme.DaveTheme
+import com.local.daveai.ui.theme.DaveThemePalette
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -28,8 +31,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        val settingsManager = DaveSettingsManager(applicationContext)
+
         setContent {
-            DaveTheme {
+            val activePalette by settingsManager.activePaletteFlow.collectAsStateWithLifecycle(
+                initialValue = DaveThemePalette.NEON_OBSIDIAN
+            )
+
+            DaveTheme(palette = activePalette) {
                 val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
                     contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
                 ) { /* Permissions Granted Result */ }

@@ -60,6 +60,7 @@ fun ChatScreen(
     val runtimeContext by viewModel.runtimeContext.collectAsStateWithLifecycle()
     val allProfiles by viewModel.allProfiles.collectAsStateWithLifecycle()
     val activeProfile by viewModel.activeProfile.collectAsStateWithLifecycle()
+    val activePalette by viewModel.activePalette.collectAsStateWithLifecycle()
 
     val filePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
@@ -498,7 +499,7 @@ fun ChatScreen(
                             .fillMaxSize()
                             .padding(innerPadding)
                     ) {
-                        AuraGlowCanvas(enabled = true, accentColor = NeonCyan)
+                        com.local.daveai.ui.theme.ShaderAuraCanvas(palette = activePalette)
                         LazyColumn(
                             state = listState,
                             modifier = Modifier

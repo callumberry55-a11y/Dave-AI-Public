@@ -29,7 +29,8 @@ data class DaveRuntimeContext(
     val recentMessages: List<String> = emptyList(),
     val semanticMemories: List<String> = emptyList(),
     val userTraits: UserTraits = UserTraits(),
-    val localLibraryContext: LocalLibraryContext = LocalLibraryContext()
+    val localLibraryContext: LocalLibraryContext = LocalLibraryContext(),
+    val customAboutMe: String = ""
 ) {
     fun formatAsPromptContext(query: String = ""): String {
         val lowerQuery = query.trim().lowercase()
@@ -43,6 +44,7 @@ data class DaveRuntimeContext(
         sb.append("- Profession & Pursuits: ${userTraits.profession}\n")
         if (userTraits.likes.isNotEmpty()) sb.append("- Callum's Likes: ${userTraits.likes.joinToString(", ")}\n")
         if (userTraits.hobbies.isNotEmpty()) sb.append("- Callum's Hobbies: ${userTraits.hobbies.joinToString(", ")}\n")
+        if (customAboutMe.isNotBlank()) sb.append("- Custom User Context: $customAboutMe\n")
 
         sb.append("\nOn-Device System & Library Status:\n")
         sb.append("- Storage: ${localLibraryContext.freeStorageGb} free of ${localLibraryContext.totalStorageGb}\n")
@@ -169,7 +171,9 @@ class DaveContextProvider(
 
         if (messageDao != null) {
             try {
-                val allEntities = messageDao.getAllMessages().firstOrNull() ?: emptyList()
+                val trimmedQuery = query.trim()
+                val allEntities = (messageDao.getAllMessages().firstOrNull() ?: emptyList())
+                    .filter { !(it.isUser && it.text.equals(trimmedQuery, ignoreCase = true)) }
                 allMessageTexts.addAll(allEntities.map { it.text })
 
                 recentMsgs.addAll(allEntities.map { entity ->
@@ -211,6 +215,9 @@ class DaveContextProvider(
         }
 
         val userTraits = extractUserTraits(allMessageTexts).copy(profession = currentProfession)
+        val customAboutMe = if (context != null) {
+            DaveSettingsManager(context).customUserContextFlow.firstOrNull() ?: ""
+        } else ""
 
         return DaveRuntimeContext(
             userName = currentUserName,
@@ -221,7 +228,8 @@ class DaveContextProvider(
             recentMessages = recentMsgs.takeLast(3),
             semanticMemories = semanticMemories,
             userTraits = userTraits,
-            localLibraryContext = libraryContext
+            localLibraryContext = libraryContext,
+            customAboutMe = customAboutMe
         )
     }
 

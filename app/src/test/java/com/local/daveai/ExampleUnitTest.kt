@@ -1,6 +1,7 @@
 package com.local.daveai
 
 import com.local.daveai.broker.DaveIntegrationProvider
+import com.local.daveai.ui.theme.DaveThemePalette
 import org.junit.Test
 import org.junit.Assert.*
 
@@ -232,6 +233,29 @@ class ExampleUnitTest {
         assertEquals("London", profile.location)
         assertEquals("Architect", profile.profession)
         assertTrue(profile.isActive)
+    }
+
+    @Test
+    fun testBeta1ThemePalettes() {
+        assertEquals(6, DaveThemePalette.entries.size)
+        assertEquals("Neon Obsidian", DaveThemePalette.NEON_OBSIDIAN.displayName)
+        assertEquals("Emerald Cyber", DaveThemePalette.EMERALD_CYBER.displayName)
+        assertEquals("Amethyst Void", DaveThemePalette.AMETHYST_VOID.displayName)
+        assertEquals("Crimson Dusk", DaveThemePalette.CRIMSON_DUSK.displayName)
+        assertEquals("Solar Gold", DaveThemePalette.SOLAR_GOLD.displayName)
+        assertEquals("Oceanic Glass", DaveThemePalette.OCEANIC_GLASS.displayName)
+    }
+
+    @Test
+    fun testSecurityAuditManagerAndShaderEngine() {
+        assertTrue(SecurityAuditManager.verifyCallerPackage(null, "com.s.launcher"))
+        val sanitized = SecurityAuditManager.sanitizePayload("Key sk-ant-api-key-123456789")
+        assertTrue(sanitized.contains("SANITIZED"))
+
+        val palette = DaveThemePalette.NEON_OBSIDIAN
+        assertEquals(3, palette.glPrimaryFloatArray.size)
+        assertEquals(3, palette.glSecondaryFloatArray.size)
+        assertEquals(3, palette.glBgFloatArray.size)
     }
 
     @Test

@@ -13,8 +13,8 @@ android {
         applicationId = "com.local.daveai"
         minSdk = 24
         targetSdk = 36
-        versionCode = 5
-        versionName = "CP5.01.01"
+        versionCode = 7
+        versionName = "BP2.01.01"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

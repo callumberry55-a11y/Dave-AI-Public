@@ -11,6 +11,7 @@ import com.local.daveai.DaveEngine
 import com.local.daveai.DaveSystemInstruction
 import com.local.daveai.DaveWebSearchManager
 import com.local.daveai.LocationHelper
+import com.local.daveai.SecurityAuditManager
 import com.local.daveai.storage.FileAccessManager
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -31,8 +32,7 @@ class DaveIntegrationProvider : ContentProvider() {
     }
 
     private fun verifyCaller(): Boolean {
-        val caller = callingPackage
-        return caller == "com.s.launcher" || caller == context?.packageName || caller == null
+        return SecurityAuditManager.verifyCallerPackage(context, callingPackage)
     }
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
@@ -46,9 +46,10 @@ class DaveIntegrationProvider : ContentProvider() {
         when (method) {
             "ai_prompt" -> {
                 val prompt = extras?.getString("prompt") ?: return null
+                val sanitizedPrompt = SecurityAuditManager.sanitizePayload(prompt)
                 val response = runBlocking {
-                    val result = daveEngine.sendPrompt(prompt, DaveSystemInstruction.daveSystemInstruction)
-                    result.getOrElse { "Dave AI Error: ${it.localizedMessage}" }
+                    val result = daveEngine.sendPrompt(sanitizedPrompt, DaveSystemInstruction.daveSystemInstruction)
+                    SecurityAuditManager.sanitizePayload(result.getOrElse { "Dave AI Error: ${it.localizedMessage}" })
                 }
                 resultBundle.putString("response", response)
             }
